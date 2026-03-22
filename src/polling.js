@@ -2,6 +2,7 @@ const axios = require("axios");
 const { BOT_API } = require("./config");
 const { KEYWORDS, PHOTO_CAPTIONS, REPLIES, PRODUCT_IMAGES_PLACEHOLDER, matchKeywords } = require("./constants");
 const { generateReply } = require("./gemini");
+const { getCachedReply } = require("./cache");
 const { sendMessage, sendPhoto, sendSticker, sendTyping } = require("./zaloBot");
 const { saveChatMessage, trackEvent } = require("./database");
 const log = require("./logger");
@@ -26,10 +27,18 @@ async function handleUpdate(update) {
         trackEvent("message", chatId);
         saveChatMessage(chatId, from.display_name, "user", text);
 
-        await sendTyping(chatId);
-        const reply = await generateReply(chatId, text);
-        await sendMessage(chatId, reply);
+        const cached = getCachedReply(text);
+        let reply;
 
+        if (cached) {
+          reply = cached;
+          trackEvent("cache_hit", chatId);
+        } else {
+          await sendTyping(chatId);
+          reply = await generateReply(chatId, text);
+        }
+
+        await sendMessage(chatId, reply);
         saveChatMessage(chatId, "Bot", "bot", reply);
 
         // Gửi ảnh sản phẩm theo từ khóa

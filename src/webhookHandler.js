@@ -1,6 +1,7 @@
 const { WEBHOOK_SECRET, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW } = require("./config");
 const { KEYWORDS, PHOTO_CAPTIONS, REPLIES, PRODUCT_IMAGES, matchKeywords } = require("./constants");
 const { generateReply } = require("./gemini");
+const { getCachedReply } = require("./cache");
 const { sendMessage, sendPhoto, sendSticker, sendTyping } = require("./zaloBot");
 const { saveChatMessage, trackEvent } = require("./database");
 const log = require("./logger");
@@ -87,11 +88,19 @@ function setupWebhook(app) {
             break;
           }
 
-          await sendTyping(chatId);
-          const reply = await generateReply(chatId, text);
-          await sendMessage(chatId, reply);
+          // Check cache trước — nếu hit thì trả lời ngay, không cần Gemini
+          const cached = getCachedReply(text);
+          let reply;
 
-          // Lưu reply của bot
+          if (cached) {
+            reply = cached;
+            trackEvent("cache_hit", chatId);
+          } else {
+            await sendTyping(chatId);
+            reply = await generateReply(chatId, text);
+          }
+
+          await sendMessage(chatId, reply);
           saveChatMessage(chatId, "Bot", "bot", reply);
 
           // Gửi ảnh sản phẩm theo từ khóa

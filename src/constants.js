@@ -63,6 +63,71 @@ const REPLIES = {
   error: "Xin lỗi, tôi đang gặp sự cố. Vui lòng thử lại sau! 🙏",
 };
 
+// ============================================================
+// Cache — câu hỏi phổ biến, trả lời ngay không cần Gemini
+// ============================================================
+const CACHE_ENTRIES = [
+  {
+    keywords: ["giá", "bao nhiêu", "bảng giá", "price", "giá tiền"],
+    reply:
+      "🍵 Bảng giá Trà Lài Bình Long:\n\n" +
+      "• 100g — 50.000đ (dùng thử, làm quà)\n" +
+      "• 250g — 110.000đ (tiết kiệm 15k)\n" +
+      "• 500g — 200.000đ (tiết kiệm 50k)\n\n" +
+      "🎁 Mua 2 gói 250g tặng 1 gói 100g!\n" +
+      "📦 FREE SHIP từ 500k\n" +
+      "Đặt hàng: zalo.me/0975324568",
+  },
+  {
+    keywords: ["ship", "giao hàng", "vận chuyển", "phí ship", "free ship", "cod"],
+    reply:
+      "📦 Thông tin giao hàng:\n\n" +
+      "• Bình Long: MIỄN PHÍ, giao trong ngày\n" +
+      "• Bình Phước: 1-2 ngày, ship 15k\n" +
+      "• Toàn quốc: 2-5 ngày, ship 25-35k\n" +
+      "• Hỗ trợ COD (nhận hàng rồi trả tiền)\n" +
+      "• Đơn từ 500k: FREE SHIP toàn quốc!\n\n" +
+      "Đặt hàng: zalo.me/0975324568",
+  },
+  {
+    keywords: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "voucher"],
+    reply:
+      "🎁 Khuyến mãi hiện tại:\n\n" +
+      "• Mua 2 gói 250g → TẶNG 1 gói 100g\n" +
+      "• Đơn từ 500k → FREE SHIP toàn quốc\n" +
+      "• Khách mới nhắn tin lần đầu → Giảm 10%\n\n" +
+      "Nhanh tay liên hệ: zalo.me/0975324568",
+  },
+  {
+    keywords: ["cách pha", "pha trà", "pha như thế nào", "pha sao"],
+    reply:
+      "☕ Cách pha Trà Lài:\n\n" +
+      "1. Cho 5-7g trà vào ấm\n" +
+      "2. Đổ nước nóng 80-85°C\n" +
+      "3. Hãm 3-5 phút\n" +
+      "4. Có thể pha lại 2-3 lần\n\n" +
+      "💡 Tip: Đừng dùng nước sôi 100°C sẽ mất hương!",
+  },
+  {
+    keywords: ["đặt hàng", "liên hệ", "order", "thanh toán"],
+    reply:
+      "📞 Để đặt hàng, nhắn tin trực tiếp cho chủ shop:\n\n" +
+      "👉 Zalo: zalo.me/0975324568\n\n" +
+      "Gửi kèm: loại trà + số lượng + địa chỉ + SĐT\n" +
+      "Hỗ trợ COD — nhận hàng rồi trả tiền! 🎁",
+  },
+  {
+    keywords: ["trà lài là gì", "trà nhài", "trà hoa nhài", "jasmine tea"],
+    reply:
+      "🍵 Trà Lài (trà hoa nhài) là loại trà xanh ướp hoa nhài tươi.\n\n" +
+      "• Hương thơm dịu nhẹ, tự nhiên\n" +
+      "• Vị thanh mát, dễ uống\n" +
+      "• Sản xuất tại Bình Long, Bình Phước\n" +
+      "• Hạn sử dụng: 12 tháng\n\n" +
+      "Giá từ 50k/100g. Đặt hàng: zalo.me/0975324568",
+  },
+];
+
 // Kiểm tra text có chứa từ khóa không
 function matchKeywords(text, keywords) {
   const lower = text.toLowerCase();
@@ -78,5 +143,6 @@ module.exports = {
   KEYWORDS,
   PHOTO_CAPTIONS,
   REPLIES,
+  CACHE_ENTRIES,
   matchKeywords,
 };
