@@ -1,5 +1,7 @@
 const express = require("express");
 const path = require("path");
+const helmet = require("helmet");
+const cors = require("cors");
 const { PORT, BOT_MODE, GEMINI_MODEL } = require("./src/config");
 const { getSessionCount, cleanup } = require("./src/gemini");
 const { registerWebhook, deleteWebhook, getWebhookInfo, getMe } = require("./src/zaloBot");
@@ -11,6 +13,8 @@ const log = require("./src/logger");
 // Express App
 // ============================================================
 const app = express();
+app.use(helmet());
+app.use(cors({ origin: false })); // Chặn cross-origin (bot chỉ nhận webhook từ Zalo)
 app.use(express.json());
 app.use("/public", express.static(path.join(__dirname, "public")));
 

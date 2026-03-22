@@ -6,6 +6,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
+    "pm2": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop zalo-bot",
+    "pm2:logs": "pm2 logs zalo-bot",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -20,7 +23,11 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "axios": "^1.13.6",
+    "cors": "^2.8.6",
     "dotenv": "^17.3.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
   }
 }

@@ -84,11 +84,24 @@ async function generateReply(chatId, messageText) {
   try {
     log.debug(`🧠 Generating reply for ${chatId}...`);
     const chat = getOrCreateChat(chatId);
-    const result = await callWithRetry(() => chat.sendMessage(messageText));
+
+    // Timeout cho Gemini API (30s)
+    const timeoutMs = 30000;
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Gemini timeout")), timeoutMs)
+    );
+
+    const result = await callWithRetry(() =>
+      Promise.race([chat.sendMessage(messageText), timeoutPromise])
+    );
     const reply = result.response.text();
     log.debug(`🧠 Reply: ${reply.substring(0, 80)}...`);
     return reply;
   } catch (err) {
+    if (err.message === "Gemini timeout") {
+      log.error("Gemini timeout — quá 30s không phản hồi");
+      return "Xin lỗi, tôi đang xử lý chậm. Vui lòng thử lại! 🙏";
+    }
     log.error("Gemini error:", err.message);
     return REPLIES.error;
   }

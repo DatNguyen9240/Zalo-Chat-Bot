@@ -1,13 +1,53 @@
+const path = require("path");
+const winston = require("winston");
+require("winston-daily-rotate-file");
 const { LOG_LEVEL } = require("./config");
 
-const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
-const currentLevel = LEVELS[LOG_LEVEL] ?? 1;
+const logDir = path.join(__dirname, "..", "logs");
 
-const logger = {
-  debug: (...args) => currentLevel <= 0 && console.log("🔍", ...args),
-  info: (...args) => currentLevel <= 1 && console.log("ℹ️", ...args),
-  warn: (...args) => currentLevel <= 2 && console.warn("⚠️", ...args),
-  error: (...args) => currentLevel <= 3 && console.error("❌", ...args),
-};
+// Format log
+const logFormat = winston.format.combine(
+  winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+  winston.format.printf(({ timestamp, level, message }) => {
+    return `[${timestamp}] ${level.toUpperCase()}: ${message}`;
+  })
+);
+
+// Format cho console (giữ emoji như cũ)
+const consoleFormat = winston.format.combine(
+  winston.format.printf(({ level, message }) => {
+    const icons = { debug: "🔍", info: "ℹ️", warn: "⚠️", error: "❌" };
+    return `${icons[level] || ""} ${message}`;
+  })
+);
+
+const logger = winston.createLogger({
+  level: LOG_LEVEL,
+  transports: [
+    // Console output (giống logger cũ)
+    new winston.transports.Console({ format: consoleFormat }),
+
+    // File log xoay vòng hàng ngày
+    new winston.transports.DailyRotateFile({
+      dirname: logDir,
+      filename: "bot-%DATE%.log",
+      datePattern: "YYYY-MM-DD",
+      maxSize: "10m",
+      maxFiles: "14d", // Giữ log 14 ngày
+      format: logFormat,
+    }),
+
+    // File riêng cho errors
+    new winston.transports.DailyRotateFile({
+      dirname: logDir,
+      filename: "error-%DATE%.log",
+      datePattern: "YYYY-MM-DD",
+      maxSize: "10m",
+      maxFiles: "30d", // Giữ errors 30 ngày
+      level: "error",
+      format: logFormat,
+    }),
+  ],
+});
 
 module.exports = logger;
