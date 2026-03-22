@@ -1,9 +1,133 @@
 const axios = require("axios");
 const { GOOGLE_SHEET_URL } = require("./config");
+const { PRODUCTS } = require("./constants");
+const { saveOrder } = require("./database");
+const { trackEvent } = require("./database");
 const log = require("./logger");
 
 // ============================================================
-// Google Sheets — Gửi đơn hàng lên sheet
+// Parse đơn hàng từ text — KHÔNG CẦN GEMINI
+// Trả về { product, quantity, customerName, phone, address } hoặc null
+// ============================================================
+function tryParseOrder(text) {
+  const lower = text.toLowerCase();
+
+  // 1) Detect sản phẩm
+  let product = null;
+  for (const p of PRODUCTS) {
+    if (p.aliases.some((a) => lower.includes(a))) {
+      product = p;
+      break;
+    }
+  }
+  if (!product) return null;
+
+  // 2) Detect SĐT (bắt buộc)
+  const phoneMatch = text.match(/(0\d{8,10})/);
+  if (!phoneMatch) return null;
+  const phone = phoneMatch[1];
+
+  // 3) Detect số lượng (mặc định 1)
+  const qtyMatch = lower.match(/(\d+)\s*(gói|hộp|bịch|cái)/);
+  const quantity = qtyMatch ? parseInt(qtyMatch[1]) : 1;
+  if (quantity < 1 || quantity > 99) return null;
+
+  // 4) Tách tên + địa chỉ từ phần còn lại
+  // Loại bỏ phần product alias + phone + quantity khỏi text
+  let remaining = text;
+  // Bỏ SĐT
+  remaining = remaining.replace(phoneMatch[0], "");
+  // Bỏ product aliases
+  for (const a of product.aliases) {
+    remaining = remaining.replace(new RegExp(a, "gi"), "");
+  }
+  // Bỏ "trà", "trà lài"
+  remaining = remaining.replace(/trà\s*lài?/gi, "");
+  // Bỏ quantity pattern
+  if (qtyMatch) remaining = remaining.replace(qtyMatch[0], "");
+  // Bỏ keywords thừa
+  remaining = remaining.replace(/đặt\s*hàng|đặt\s*mua|mua|đặt|order/gi, "");
+
+  // Split bằng dấu , hoặc |
+  let parts = remaining.split(/[,|]/).map((s) => s.trim()).filter((s) => s.length >= 2);
+
+  if (parts.length >= 2) {
+    // Có ít nhất tên + địa chỉ
+    const customerName = parts[0];
+    const address = parts.slice(1).join(", ");
+    return { product, quantity, customerName, phone, address };
+  }
+
+  // Thử detect bằng vị trí SĐT: text trước = tên, text sau = địa chỉ
+  const phoneIdx = text.indexOf(phone);
+  const beforePhone = text.substring(0, phoneIdx).replace(/[,|]/g, "").trim();
+  const afterPhone = text.substring(phoneIdx + phone.length).replace(/[,|]/g, "").trim();
+
+  // Xử lý: loại bỏ product/qty keywords từ beforePhone
+  let cleanBefore = beforePhone;
+  for (const a of product.aliases) {
+    cleanBefore = cleanBefore.replace(new RegExp(a, "gi"), "");
+  }
+  cleanBefore = cleanBefore.replace(/trà\s*lài?/gi, "").replace(/\d+\s*(gói|hộp)/gi, "").replace(/đặt|mua|order/gi, "").trim();
+
+  let cleanAfter = afterPhone;
+  for (const a of product.aliases) {
+    cleanAfter = cleanAfter.replace(new RegExp(a, "gi"), "");
+  }
+  cleanAfter = cleanAfter.replace(/trà\s*lài?/gi, "").replace(/\d+\s*(gói|hộp)/gi, "").replace(/đặt|mua|order/gi, "").trim();
+
+  if (cleanBefore.length >= 2 && cleanAfter.length >= 2) {
+    return { product, quantity, customerName: cleanBefore, phone, address: cleanAfter };
+  }
+
+  return null;
+}
+
+// ============================================================
+// Tạo đơn hàng — gọi khi parse thành công
+// ============================================================
+function createOrderFromParsed(chatId, displayName, parsed) {
+  const totalPrice = parsed.product.price * parsed.quantity;
+
+  const orderId = saveOrder({
+    chatId,
+    displayName,
+    product: parsed.product.name,
+    quantity: parsed.quantity,
+    totalPrice,
+    customerName: parsed.customerName,
+    phone: parsed.phone,
+    address: parsed.address,
+  });
+
+  sendToGoogleSheet({
+    orderId,
+    displayName,
+    product: parsed.product.name,
+    quantity: parsed.quantity,
+    totalPrice,
+    customerName: parsed.customerName,
+    phone: parsed.phone,
+    address: parsed.address,
+  });
+
+  trackEvent("order_created", chatId);
+
+  const priceStr = totalPrice.toLocaleString("vi-VN") + "đ";
+
+  return (
+    `✅ Đã ghi nhận đơn hàng #${orderId}!\n\n` +
+    `📦 ${parsed.quantity}x ${parsed.product.name}\n` +
+    `💰 Tổng: ${priceStr}\n` +
+    `👤 ${parsed.customerName}\n` +
+    `📱 ${parsed.phone}\n` +
+    `📍 ${parsed.address}\n\n` +
+    "Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏"
+  );
+}
+
+// ============================================================
+// Google Sheets
 // ============================================================
 async function sendToGoogleSheet(order) {
   if (!GOOGLE_SHEET_URL) {
@@ -16,8 +140,7 @@ async function sendToGoogleSheet(order) {
     log.info(`📊 Google Sheet updated: Order #${order.orderId}`);
   } catch (err) {
     log.error("Google Sheet error:", err.message);
-    // Không throw — đơn đã lưu trong SQLite, sheet chỉ là backup
   }
 }
 
-module.exports = { sendToGoogleSheet };
+module.exports = { tryParseOrder, createOrderFromParsed, sendToGoogleSheet, PRODUCTS };

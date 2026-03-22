@@ -3,6 +3,7 @@ const { BOT_API } = require("./config");
 const { KEYWORDS, PHOTO_CAPTIONS, REPLIES, PRODUCT_IMAGES_PLACEHOLDER, matchKeywords } = require("./constants");
 const { generateReply } = require("./gemini");
 const { getCachedReply } = require("./cache");
+const { tryParseOrder, createOrderFromParsed } = require("./order");
 const { sendMessage, sendPhoto, sendSticker, sendTyping } = require("./zaloBot");
 const { saveChatMessage, trackEvent } = require("./database");
 const log = require("./logger");
@@ -27,12 +28,23 @@ async function handleUpdate(update) {
         trackEvent("message", chatId);
         saveChatMessage(chatId, from.display_name, "user", text);
 
+        // 1) Thử parse đơn hàng trực tiếp
+        const parsed = tryParseOrder(text);
+        if (parsed) {
+          const orderReply = createOrderFromParsed(chatId, from.display_name, parsed);
+          await sendMessage(chatId, orderReply);
+          saveChatMessage(chatId, "Bot", "bot", orderReply);
+          break;
+        }
+
+        // 2) Cache
         const cached = getCachedReply(text);
         let reply;
 
         if (cached) {
           reply = cached;
         } else {
+          // 3) Gemini AI
           await sendTyping(chatId);
           reply = await generateReply(chatId, text, from.display_name);
         }

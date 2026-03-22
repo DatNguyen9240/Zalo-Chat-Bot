@@ -2,6 +2,7 @@ const { WEBHOOK_SECRET, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW } = require("./config"
 const { KEYWORDS, PHOTO_CAPTIONS, REPLIES, PRODUCT_IMAGES, matchKeywords } = require("./constants");
 const { generateReply } = require("./gemini");
 const { getCachedReply } = require("./cache");
+const { tryParseOrder, createOrderFromParsed } = require("./order");
 const { sendMessage, sendPhoto, sendSticker, sendTyping } = require("./zaloBot");
 const { saveChatMessage, trackEvent } = require("./database");
 const log = require("./logger");
@@ -88,14 +89,23 @@ function setupWebhook(app) {
             break;
           }
 
-          // Cache cho chào hỏi đơn giản → tránh gọi Gemini thừa
+          // 1) Thử parse đơn hàng trực tiếp (không cần Gemini)
+          const parsed = tryParseOrder(text);
+          if (parsed) {
+            const orderReply = createOrderFromParsed(chatId, from.display_name, parsed);
+            await sendMessage(chatId, orderReply);
+            saveChatMessage(chatId, "Bot", "bot", orderReply);
+            break;
+          }
+
+          // 2) Cache cho FAQ
           const cached = getCachedReply(text);
           let reply;
 
           if (cached) {
             reply = cached;
           } else {
-            // Gemini AI (function calling xử lý đặt hàng tự động)
+            // 3) Gemini AI (function calling cho đơn phức tạp)
             await sendTyping(chatId);
             reply = await generateReply(chatId, text, from.display_name);
           }

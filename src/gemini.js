@@ -2,22 +2,13 @@ const fs = require("fs");
 const path = require("path");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY, GEMINI_MODEL } = require("./config");
-const { SYSTEM_PROMPT, SESSION_TTL, REPLIES } = require("./constants");
+const { SYSTEM_PROMPT, SESSION_TTL, REPLIES, PRODUCTS } = require("./constants");
 const { enqueue } = require("./queue");
 const { saveOrder } = require("./database");
 const { trackEvent } = require("./database");
 const log = require("./logger");
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-
-// ============================================================
-// Sản phẩm — cho AI biết menu
-// ============================================================
-const PRODUCTS = [
-  { id: 1, name: "Trà Lài 100g", price: 50000 },
-  { id: 2, name: "Trà Lài 250g", price: 110000 },
-  { id: 3, name: "Trà Lài 500g", price: 200000 },
-];
 
 const PRODUCTS_TEXT = PRODUCTS.map(
   (p) => `- ${p.name}: ${p.price.toLocaleString("vi-VN")}đ`
