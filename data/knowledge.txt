@@ -1,0 +1,56 @@
+# Thông tin cửa hàng
+
+Tên cửa hàng: Trà Lài Shop
+Địa chỉ: Bình Long, Bình Phước
+Sản phẩm chính: Trà Lài (Trà Hoa Nhài) — đặc sản trà thơm tự nhiên
+Liên hệ chủ shop: Zalo 0975324568 (nhắn qua link: https://zalo.me/0975324568)
+
+# Bảng giá sản phẩm
+
+1. Trà Lài gói nhỏ 100g — 50.000đ
+   Phù hợp dùng thử, làm quà tặng
+
+2. Trà Lài gói vừa 250g — 110.000đ (tiết kiệm 15.000đ)
+   Dùng hàng ngày cho gia đình
+
+3. Trà Lài gói lớn 500g — 200.000đ (tiết kiệm 50.000đ)
+   Gói tiết kiệm nhất, phù hợp cho quán hoặc mua sỉ
+
+# Khuyến mãi
+
+- Mua 2 gói 250g tặng 1 gói 100g
+- Mua từ 500.000đ được FREE SHIP toàn quốc
+- Khách mới nhắn tin lần đầu giảm 10%
+
+# Thông tin giao hàng
+
+- Khu vực Bình Long: giao tận nơi MIỄN PHÍ trong ngày
+- Bình Phước: giao trong 1-2 ngày, phí ship 15.000đ
+- Toàn quốc: giao qua GHTK/GHN, 2-5 ngày, phí ship 25.000-35.000đ
+- Hỗ trợ ship COD (nhận hàng rồi thanh toán)
+- Đơn từ 500.000đ: FREE SHIP toàn quốc
+
+# Câu hỏi thường gặp (FAQ)
+
+Hỏi: Trà Lài là gì?
+Đáp: Trà Lài (hay trà hoa nhài) là loại trà xanh ướp hoa nhài tươi, cho hương thơm dịu nhẹ, vị thanh mát. Trà được sản xuất tại Bình Long, Bình Phước — vùng trà nổi tiếng.
+
+Hỏi: Trà có hạn sử dụng bao lâu?
+Đáp: 12 tháng kể từ ngày sản xuất, bảo quản nơi khô ráo thoáng mát.
+
+Hỏi: Cách pha trà?
+Đáp: Cho 5-7g trà vào ấm, đổ nước nóng 80-85°C, hãm 3-5 phút. Có thể pha lại 2-3 lần.
+
+Hỏi: Muốn đặt hàng?
+Đáp: Nhắn tin cho mình số lượng và địa chỉ, hoặc liên hệ chủ shop qua Zalo: https://zalo.me/0975324568
+
+Hỏi: Muốn xem hình sản phẩm?
+Đáp: Liên hệ chủ shop qua Zalo để xem hình thực tế: https://zalo.me/0975324568
+
+# Hướng dẫn cho Bot
+- Khi khách chào hoặc hỏi chung, hãy GIỚI THIỆU sản phẩm trà lài kèm giá và khuyến mãi
+- Khi khách hỏi giá, liệt kê bảng giá đầy đủ kèm khuyến mãi
+- Khi khách muốn mua hoặc đặt hàng, hỏi số lượng và địa chỉ, rồi hướng dẫn liên hệ chủ shop: https://zalo.me/0975324568
+- Luôn nhắc khuyến mãi hiện tại để kích thích mua hàng
+- Gọi khách là "bạn" hoặc "anh/chị"
+- Nếu không biết câu trả lời, hướng dẫn liên hệ chủ shop
