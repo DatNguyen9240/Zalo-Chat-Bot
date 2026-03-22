@@ -51,7 +51,7 @@ const PRODUCT_IMAGES_PLACEHOLDER = {
 // ============================================================
 const KEYWORDS = {
   greeting: ["chào", "hello", "hi", "xin chào", "hey", "alo"],
-  price: ["giá", "bao nhiêu", "bảng giá", "price", "mua"],
+  price: ["giá", "bao nhiêu", "bảng giá", "price"],
   promo: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "free ship"],
 };
 

@@ -143,4 +143,4 @@ async function sendToGoogleSheet(order) {
   }
 }
 
-module.exports = { tryParseOrder, createOrderFromParsed, sendToGoogleSheet, PRODUCTS };
+module.exports = { tryParseOrder, createOrderFromParsed, sendToGoogleSheet };

@@ -144,14 +144,7 @@ app.patch("/admin/orders/:id", requireAdmin, (req, res) => {
   res.json({ ok: true, message: `Đơn #${req.params.id} → ${status}` });
 });
 
-// GET /admin/orders/export — Tải Excel
-const EXCEL_PATH = path.join(__dirname, "data", "orders.xlsx");
-app.get("/admin/orders/export", requireAdmin, (req, res) => {
-  if (!fs.existsSync(EXCEL_PATH)) {
-    return res.status(404).json({ error: "Chưa có đơn hàng nào" });
-  }
-  res.download(EXCEL_PATH, "orders.xlsx");
-});
+
 const server = app.listen(PORT, async () => {
   console.log(`
 ╔══════════════════════════════════════════════╗
