@@ -88,16 +88,16 @@ function setupWebhook(app) {
             break;
           }
 
-          // Check cache trước — nếu hit thì trả lời ngay, không cần Gemini
+          // Cache cho chào hỏi đơn giản → tránh gọi Gemini thừa
           const cached = getCachedReply(text);
           let reply;
 
           if (cached) {
             reply = cached;
-            trackEvent("cache_hit", chatId);
           } else {
+            // Gemini AI (function calling xử lý đặt hàng tự động)
             await sendTyping(chatId);
-            reply = await generateReply(chatId, text);
+            reply = await generateReply(chatId, text, from.display_name);
           }
 
           await sendMessage(chatId, reply);
@@ -139,7 +139,7 @@ function setupWebhook(app) {
 
       case "message.unsupported.received":
         trackEvent("unsupported", chatId);
-        if (chatId) await sendMessage(chatId, REPLIES.unsupported);
+        // Không reply — tránh gửi tin nhắn thừa
         break;
 
       default:

@@ -32,10 +32,9 @@ async function handleUpdate(update) {
 
         if (cached) {
           reply = cached;
-          trackEvent("cache_hit", chatId);
         } else {
           await sendTyping(chatId);
-          reply = await generateReply(chatId, text);
+          reply = await generateReply(chatId, text, from.display_name);
         }
 
         await sendMessage(chatId, reply);
@@ -76,7 +75,6 @@ async function handleUpdate(update) {
 
     case "message.unsupported.received":
       trackEvent("unsupported", chatId);
-      if (chatId) await sendMessage(chatId, REPLIES.unsupported);
       break;
 
     default:

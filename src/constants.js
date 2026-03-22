@@ -68,26 +68,53 @@ const REPLIES = {
 // ============================================================
 const CACHE_ENTRIES = [
   {
-    keywords: ["giá", "bao nhiêu", "bảng giá", "price", "giá tiền"],
+    keywords: ["chào", "xin chào", "hello", "hi ", "hey", "alo"],
     reply:
-      "🍵 Bảng giá Trà Lài Bình Long:\n\n" +
-      "• 100g — 50.000đ (dùng thử, làm quà)\n" +
-      "• 250g — 110.000đ (tiết kiệm 15k)\n" +
-      "• 500g — 200.000đ (tiết kiệm 50k)\n\n" +
+      "Chào bạn! 🍵 Trà Lài Shop xin chào!\n\n" +
+      "Mình có Trà Lài Bình Long 100g/250g/500g.\n" +
+      "Bạn muốn tìm hiểu gì hoặc đặt hàng cứ nhắn nhé!",
+  },
+  {
+    keywords: ["đặt hàng", "đặt mua", "đặt gói", "mua hàng", "mua trà", "mua gói", "muốn mua", "muốn đặt", "order"],
+    reply:
+      "🛒 Đặt hàng Trà Lài Bình Long!\n\n" +
+      "📋 Menu:\n" +
+      "• Trà Lài 100g — 50.000đ\n" +
+      "• Trà Lài 250g — 110.000đ\n" +
+      "• Trà Lài 500g — 200.000đ\n\n" +
+      "Bạn nhắn cho mình:\n" +
+      "👉 Loại trà + Số lượng + Họ tên + SĐT + Địa chỉ\n\n" +
+      "VD: \"Trà 250g, 2 gói, Nguyễn Văn A, 0901234567, Q1 TPHCM\"",
+  },
+  {
+    keywords: ["giá", "bao nhiêu", "bảng giá", "price"],
+    reply:
+      "💰 Bảng giá Trà Lài Bình Long:\n\n" +
+      "• Trà Lài 100g — 50.000đ\n" +
+      "• Trà Lài 250g — 110.000đ ⭐ bán chạy\n" +
+      "• Trà Lài 500g — 200.000đ 🔥 tiết kiệm nhất\n\n" +
       "🎁 Mua 2 gói 250g tặng 1 gói 100g!\n" +
-      "📦 FREE SHIP từ 500k\n" +
-      "Đặt hàng: zalo.me/0975324568",
+      "Nhắn \"đặt hàng\" để đặt ngay!",
   },
   {
     keywords: ["ship", "giao hàng", "vận chuyển", "phí ship", "free ship", "cod"],
     reply:
-      "📦 Thông tin giao hàng:\n\n" +
+      "🚚 Chính sách giao hàng:\n\n" +
       "• Bình Long: MIỄN PHÍ, giao trong ngày\n" +
       "• Bình Phước: 1-2 ngày, ship 15k\n" +
       "• Toàn quốc: 2-5 ngày, ship 25-35k\n" +
-      "• Hỗ trợ COD (nhận hàng rồi trả tiền)\n" +
-      "• Đơn từ 500k: FREE SHIP toàn quốc!\n\n" +
-      "Đặt hàng: zalo.me/0975324568",
+      "• Hỗ trợ COD — nhận hàng rồi trả tiền\n" +
+      "• Đơn từ 500k: FREE SHIP toàn quốc!",
+  },
+  {
+    keywords: ["cách pha", "pha trà", "pha sao", "pha như thế nào"],
+    reply:
+      "☕ Cách pha Trà Lài:\n\n" +
+      "1. 5-7g trà vào ấm\n" +
+      "2. Nước nóng 80-85°C\n" +
+      "3. Hãm 3-5 phút\n" +
+      "4. Pha lại được 2-3 lần\n\n" +
+      "💡 Đừng dùng nước sôi 100°C — mất hương!",
   },
   {
     keywords: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "voucher"],
@@ -96,25 +123,13 @@ const CACHE_ENTRIES = [
       "• Mua 2 gói 250g → TẶNG 1 gói 100g\n" +
       "• Đơn từ 500k → FREE SHIP toàn quốc\n" +
       "• Khách mới nhắn tin lần đầu → Giảm 10%\n\n" +
-      "Nhanh tay liên hệ: zalo.me/0975324568",
+      "Nhắn \"đặt hàng\" để đặt ngay!",
   },
   {
-    keywords: ["cách pha", "pha trà", "pha như thế nào", "pha sao"],
+    keywords: ["hạn sử dụng", "bảo quản", "hạn dùng", "hết hạn"],
     reply:
-      "☕ Cách pha Trà Lài:\n\n" +
-      "1. Cho 5-7g trà vào ấm\n" +
-      "2. Đổ nước nóng 80-85°C\n" +
-      "3. Hãm 3-5 phút\n" +
-      "4. Có thể pha lại 2-3 lần\n\n" +
-      "💡 Tip: Đừng dùng nước sôi 100°C sẽ mất hương!",
-  },
-  {
-    keywords: ["đặt hàng", "liên hệ", "order", "thanh toán"],
-    reply:
-      "📞 Để đặt hàng, nhắn tin trực tiếp cho chủ shop:\n\n" +
-      "👉 Zalo: zalo.me/0975324568\n\n" +
-      "Gửi kèm: loại trà + số lượng + địa chỉ + SĐT\n" +
-      "Hỗ trợ COD — nhận hàng rồi trả tiền! 🎁",
+      "📅 Hạn sử dụng: 12 tháng kể từ ngày sản xuất.\n\n" +
+      "Bảo quản nơi khô ráo, thoáng mát, tránh ánh nắng trực tiếp.",
   },
   {
     keywords: ["trà lài là gì", "trà nhài", "trà hoa nhài", "jasmine tea"],
@@ -122,9 +137,33 @@ const CACHE_ENTRIES = [
       "🍵 Trà Lài (trà hoa nhài) là loại trà xanh ướp hoa nhài tươi.\n\n" +
       "• Hương thơm dịu nhẹ, tự nhiên\n" +
       "• Vị thanh mát, dễ uống\n" +
-      "• Sản xuất tại Bình Long, Bình Phước\n" +
-      "• Hạn sử dụng: 12 tháng\n\n" +
-      "Giá từ 50k/100g. Đặt hàng: zalo.me/0975324568",
+      "• Sản xuất tại Bình Long, Bình Phước\n\n" +
+      "Giá từ 50k/100g. Nhắn \"đặt hàng\" để mua!",
+  },
+  {
+    keywords: ["liên hệ", "số điện thoại", "sdt", "zalo shop"],
+    reply:
+      "📞 Liên hệ chủ shop:\n\n" +
+      "👉 Nhắn Zalo: 0975324568\n\n" +
+      "Hoặc nhắn \"đặt hàng\" để bot ghi nhận đơn tự động! 🛒",
+  },
+  {
+    keywords: ["hình", "ảnh", "xem sản phẩm", "hình ảnh"],
+    reply:
+      "📸 Mình gửi hình sản phẩm nhé!\n" +
+      "Nhắn Zalo: 0975324568 để xem thêm hình thực tế.",
+  },
+  {
+    keywords: ["thanh toán", "chuyển khoản", "trả tiền"],
+    reply:
+      "💳 Phương thức thanh toán:\n\n" +
+      "• COD — nhận hàng rồi trả tiền\n" +
+      "• Chuyển khoản trước\n\n" +
+      "Nhắn Zalo: 0975324568 để được hướng dẫn!",
+  },
+  {
+    keywords: ["cảm ơn", "thanks", "thank", "ok cảm ơn"],
+    reply: "Cảm ơn bạn! Nếu cần gì thêm cứ nhắn nhé 🙏🍵",
   },
 ];
 

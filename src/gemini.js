@@ -4,10 +4,73 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY, GEMINI_MODEL } = require("./config");
 const { SYSTEM_PROMPT, SESSION_TTL, REPLIES } = require("./constants");
 const { enqueue } = require("./queue");
+const { saveOrder } = require("./database");
+const { trackEvent } = require("./database");
 const log = require("./logger");
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+
+// ============================================================
+// Sản phẩm — cho AI biết menu
+// ============================================================
+const PRODUCTS = [
+  { id: 1, name: "Trà Lài 100g", price: 50000 },
+  { id: 2, name: "Trà Lài 250g", price: 110000 },
+  { id: 3, name: "Trà Lài 500g", price: 200000 },
+];
+
+const PRODUCTS_TEXT = PRODUCTS.map(
+  (p) => `- ${p.name}: ${p.price.toLocaleString("vi-VN")}đ`
+).join("\n");
+
+// ============================================================
+// Function calling — AI gọi khi đủ info đặt hàng
+// ============================================================
+const ORDER_TOOL = {
+  functionDeclarations: [
+    {
+      name: "create_order",
+      description:
+        "Tạo đơn hàng khi đã thu thập đủ thông tin từ khách: sản phẩm, số lượng, họ tên, SĐT, địa chỉ. " +
+        "CHỈ GỌI KHI ĐÃ CÓ ĐẦY ĐỦ 5 THÔNG TIN. Nếu thiếu bất kỳ thông tin nào, hãy hỏi khách trước.",
+      parameters: {
+        type: "object",
+        properties: {
+          product: {
+            type: "string",
+            description: "Tên sản phẩm (Trà Lài 100g, Trà Lài 250g, hoặc Trà Lài 500g)",
+            enum: PRODUCTS.map((p) => p.name),
+          },
+          quantity: {
+            type: "integer",
+            description: "Số lượng gói",
+          },
+          customer_name: {
+            type: "string",
+            description: "Họ tên người nhận hàng",
+          },
+          phone: {
+            type: "string",
+            description: "Số điện thoại nhận hàng (VD: 0901234567)",
+          },
+          address: {
+            type: "string",
+            description: "Địa chỉ giao hàng",
+          },
+        },
+        required: ["product", "quantity", "customer_name", "phone", "address"],
+      },
+    },
+  ],
+};
+
+// ============================================================
+// Model config với function calling
+// ============================================================
+const model = genAI.getGenerativeModel({
+  model: GEMINI_MODEL,
+  tools: [ORDER_TOOL],
+});
 
 // Load tất cả file .txt từ data/
 let knowledge = "";
@@ -24,15 +87,28 @@ try {
   log.warn("Không tìm thấy thư mục data/ — bot trả lời chung chung");
 }
 
-// System instruction cho Gemini
+// System instruction kèm order instructions
 const SYSTEM_INSTRUCTION = {
   parts: [
     {
       text:
         SYSTEM_PROMPT +
         "\n\n" +
+        "## Hướng dẫn đặt hàng\n" +
+        "Khi khách muốn đặt hàng/mua hàng, hãy:\n" +
+        "1. Hỏi khách muốn mua sản phẩm nào (nếu chưa nói)\n" +
+        "2. Hỏi số lượng (nếu chưa nói)\n" +
+        "3. Hỏi họ tên người nhận\n" +
+        "4. Hỏi SĐT\n" +
+        "5. Hỏi địa chỉ giao hàng\n" +
+        "Khi ĐÃ CÓ ĐỦ 5 thông tin trên, gọi function create_order.\n" +
+        "Khách có thể cung cấp nhiều thông tin cùng lúc — hãy tự extract.\n" +
+        "Nếu khách nói sai tên sản phẩm, gợi ý đúng tên.\n\n" +
+        "## Menu sản phẩm\n" +
+        PRODUCTS_TEXT +
+        "\n\n" +
         (knowledge
-          ? `Dưới đây là tài liệu tham khảo của công ty, hãy dựa vào đây để trả lời:\n\n${knowledge}`
+          ? `## Tài liệu tham khảo\n${knowledge}`
           : ""),
     },
   ],
@@ -66,8 +142,8 @@ function getOrCreateChat(chatId) {
   return chat;
 }
 
-// Retry logic cho Gemini 429
-async function callWithRetry(fn, retries = 2) {
+// Retry logic cho 429
+async function callWithRetry(fn, retries = 3) {
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn();
@@ -76,7 +152,7 @@ async function callWithRetry(fn, retries = 2) {
         err.message?.includes("429") ||
         err.message?.includes("Too Many Requests");
       if (is429 && i < retries) {
-        const delay = Math.pow(2, i + 1) * 1000;
+        const delay = [5000, 15000, 30000][i] || 30000;
         log.warn(`Gemini 429 — retry ${i + 1}/${retries} sau ${delay / 1000}s...`);
         await new Promise((r) => setTimeout(r, delay));
       } else {
@@ -86,7 +162,69 @@ async function callWithRetry(fn, retries = 2) {
   }
 }
 
-async function generateReply(chatId, messageText) {
+// ============================================================
+// Xử lý function call từ Gemini
+// ============================================================
+function handleFunctionCall(functionCall, chatId, displayName) {
+  if (functionCall.name === "create_order") {
+    const args = functionCall.args;
+
+    // Tìm sản phẩm
+    const product = PRODUCTS.find((p) => p.name === args.product);
+    if (!product) {
+      return { result: { error: "Sản phẩm không tìm thấy" } };
+    }
+
+    const totalPrice = product.price * args.quantity;
+
+    // Lưu vào DB
+    const orderId = saveOrder({
+      chatId,
+      displayName,
+      product: product.name,
+      quantity: args.quantity,
+      totalPrice,
+      customerName: args.customer_name,
+      phone: args.phone,
+      address: args.address,
+    });
+
+    trackEvent("order_created", chatId);
+
+    // Gửi lên Google Sheets (async)
+    const { sendToGoogleSheet } = require("./order");
+    sendToGoogleSheet({
+      orderId,
+      displayName,
+      product: product.name,
+      quantity: args.quantity,
+      totalPrice,
+      customerName: args.customer_name,
+      phone: args.phone,
+      address: args.address,
+    });
+
+    return {
+      result: {
+        success: true,
+        orderId,
+        product: product.name,
+        quantity: args.quantity,
+        totalPrice,
+        customerName: args.customer_name,
+        phone: args.phone,
+        address: args.address,
+      },
+    };
+  }
+
+  return { result: { error: "Function không hợp lệ" } };
+}
+
+// ============================================================
+// Generate Reply — hỗ trợ function calling
+// ============================================================
+async function generateReply(chatId, messageText, displayName = "Khách") {
   return enqueue(async () => {
     try {
       log.debug(`🧠 Generating reply for ${chatId}...`);
@@ -97,10 +235,39 @@ async function generateReply(chatId, messageText) {
         setTimeout(() => reject(new Error("Gemini timeout")), timeoutMs)
       );
 
-      const result = await callWithRetry(() =>
+      let result = await callWithRetry(() =>
         Promise.race([chat.sendMessage(messageText), timeoutPromise])
       );
-      const reply = result.response.text();
+
+      let response = result.response;
+
+      // Kiểm tra function call
+      const functionCalls = response.functionCalls();
+      if (functionCalls && functionCalls.length > 0) {
+        const fc = functionCalls[0];
+        log.info(`🔧 Function call: ${fc.name}(${JSON.stringify(fc.args)})`);
+
+        // Thực thi function
+        const functionResult = handleFunctionCall(fc, chatId, displayName);
+
+        // Gửi kết quả về Gemini để nó tạo phản hồi cho user
+        result = await callWithRetry(() =>
+          Promise.race([
+            chat.sendMessage([
+              {
+                functionResponse: {
+                  name: fc.name,
+                  response: functionResult,
+                },
+              },
+            ]),
+            timeoutPromise,
+          ])
+        );
+        response = result.response;
+      }
+
+      const reply = response.text();
       log.debug(`🧠 Reply: ${reply.substring(0, 80)}...`);
       return reply;
     } catch (err) {

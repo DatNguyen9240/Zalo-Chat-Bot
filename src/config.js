@@ -11,6 +11,7 @@ const {
   LOG_LEVEL,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW,
+  GOOGLE_SHEET_URL,
 } = process.env;
 
 if (!BOT_TOKEN) throw new Error("❌ Missing BOT_TOKEN in .env");
@@ -30,4 +31,5 @@ module.exports = {
   LOG_LEVEL: LOG_LEVEL || "info", // "debug" | "info" | "warn" | "error"
   RATE_LIMIT_MAX: parseInt(RATE_LIMIT_MAX) || 10, // Số tin nhắn tối đa
   RATE_LIMIT_WINDOW: parseInt(RATE_LIMIT_WINDOW) || 60000, // Trong khoảng thời gian (ms)
+  GOOGLE_SHEET_URL,
 };

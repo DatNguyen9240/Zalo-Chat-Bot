@@ -8,7 +8,7 @@ const { getSessionCount, cleanup } = require("./src/gemini");
 const { registerWebhook, deleteWebhook, getWebhookInfo, getMe } = require("./src/zaloBot");
 const { setupWebhook } = require("./src/webhookHandler");
 const { startPolling, stopPolling } = require("./src/polling");
-const { getStats, closeDb } = require("./src/database");
+const { getStats, getOrders, updateOrderStatus, closeDb } = require("./src/database");
 const { getQueueInfo } = require("./src/queue");
 const log = require("./src/logger");
 
@@ -127,12 +127,35 @@ app.delete("/admin/knowledge/:filename", requireAdmin, (req, res) => {
 });
 
 // ============================================================
-// Start Server
+// Admin API — Quản lý đơn hàng (protected)
 // ============================================================
+
+// GET /admin/orders — Danh sách đơn hàng
+app.get("/admin/orders", requireAdmin, (req, res) => {
+  const status = req.query.status || null;
+  res.json({ orders: getOrders(status) });
+});
+
+// PATCH /admin/orders/:id — Cập nhật trạng thái đơn
+app.patch("/admin/orders/:id", requireAdmin, (req, res) => {
+  const { status } = req.body;
+  if (!status) return res.status(400).json({ error: "status là bắt buộc" });
+  updateOrderStatus(req.params.id, status);
+  res.json({ ok: true, message: `Đơn #${req.params.id} → ${status}` });
+});
+
+// GET /admin/orders/export — Tải Excel
+const EXCEL_PATH = path.join(__dirname, "data", "orders.xlsx");
+app.get("/admin/orders/export", requireAdmin, (req, res) => {
+  if (!fs.existsSync(EXCEL_PATH)) {
+    return res.status(404).json({ error: "Chưa có đơn hàng nào" });
+  }
+  res.download(EXCEL_PATH, "orders.xlsx");
+});
 const server = app.listen(PORT, async () => {
   console.log(`
 ╔══════════════════════════════════════════════╗
-║       🤖 Zalo Bot is running!               ║
+║       🤖 Zalo Bot is running!                ║
 ║                                              ║
 ║  Server:    http://localhost:${String(PORT).padEnd(16)}║
 ║  Mode:      ${BOT_MODE.padEnd(33)}║

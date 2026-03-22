@@ -14,7 +14,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id TEXT NOT NULL,
     display_name TEXT,
-    role TEXT NOT NULL,        -- 'user' | 'bot'
+    role TEXT NOT NULL,
     message TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -26,10 +26,26 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id TEXT NOT NULL,
+    display_name TEXT,
+    product TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    total_price INTEGER NOT NULL,
+    customer_name TEXT,
+    phone TEXT,
+    address TEXT,
+    status TEXT DEFAULT 'new',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS idx_chat_history_chat_id ON chat_history(chat_id);
   CREATE INDEX IF NOT EXISTS idx_chat_history_created ON chat_history(created_at);
   CREATE INDEX IF NOT EXISTS idx_stats_event ON stats(event_type);
   CREATE INDEX IF NOT EXISTS idx_stats_created ON stats(created_at);
+  CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+  CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
 `);
 
 log.info("💾 Database ready");
@@ -54,6 +70,39 @@ function getChatHistory(chatId, limit = 20) {
     .prepare("SELECT * FROM chat_history WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?")
     .all(chatId, limit)
     .reverse();
+}
+
+// ============================================================
+// Orders
+// ============================================================
+const insertOrder = db.prepare(
+  "INSERT INTO orders (chat_id, display_name, product, quantity, total_price, customer_name, phone, address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+);
+
+function saveOrder({ chatId, displayName, product, quantity, totalPrice, customerName, phone, address }) {
+  try {
+    const info = insertOrder.run(chatId, displayName, product, quantity, totalPrice, customerName, phone, address);
+    log.info(`🛒 Order #${info.lastInsertRowid} saved: ${quantity}x ${product} = ${totalPrice}đ`);
+    return info.lastInsertRowid;
+  } catch (err) {
+    log.error("DB saveOrder:", err.message);
+    return null;
+  }
+}
+
+function getOrders(status = null) {
+  if (status) {
+    return db.prepare("SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC").all(status);
+  }
+  return db.prepare("SELECT * FROM orders ORDER BY created_at DESC").all();
+}
+
+function updateOrderStatus(orderId, status) {
+  try {
+    db.prepare("UPDATE orders SET status = ? WHERE id = ?").run(status, orderId);
+  } catch (err) {
+    log.error("DB updateOrderStatus:", err.message);
+  }
 }
 
 // ============================================================
@@ -98,7 +147,14 @@ function getStats() {
     .prepare("SELECT COUNT(*) as count FROM stats WHERE event_type = 'error'")
     .get().count;
 
-  // Top 7 ngày gần nhất
+  const totalOrders = db
+    .prepare("SELECT COUNT(*) as count FROM orders")
+    .get().count;
+
+  const newOrders = db
+    .prepare("SELECT COUNT(*) as count FROM orders WHERE status = 'new'")
+    .get().count;
+
   const daily = db
     .prepare(`
       SELECT date(created_at) as day, COUNT(*) as count 
@@ -110,20 +166,19 @@ function getStats() {
     .reverse();
 
   return {
-    totalMessages,
-    todayMessages,
-    uniqueUsers,
-    todayUsers,
-    totalPhotos,
-    totalErrors,
-    daily,
+    totalMessages, todayMessages, uniqueUsers, todayUsers,
+    totalPhotos, totalErrors, totalOrders, newOrders, daily,
   };
 }
 
-// Cleanup khi shutdown
 function closeDb() {
   db.close();
   log.info("💾 Database closed");
 }
 
-module.exports = { saveChatMessage, getChatHistory, trackEvent, getStats, closeDb };
+module.exports = {
+  saveChatMessage, getChatHistory,
+  trackEvent, getStats,
+  saveOrder, getOrders, updateOrderStatus,
+  closeDb,
+};
