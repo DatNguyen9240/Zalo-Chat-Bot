@@ -7,6 +7,7 @@ const {
   GEMINI_API_KEY,
   GEMINI_MODEL,
   WEBHOOK_SECRET,
+  ADMIN_SECRET,
   LOG_LEVEL,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW,
@@ -24,6 +25,7 @@ module.exports = {
   GEMINI_API_KEY,
   GEMINI_MODEL: GEMINI_MODEL || "gemini-2.5-flash",
   WEBHOOK_SECRET,
+  ADMIN_SECRET,
   BOT_API,
   LOG_LEVEL: LOG_LEVEL || "info", // "debug" | "info" | "warn" | "error"
   RATE_LIMIT_MAX: parseInt(RATE_LIMIT_MAX) || 10, // Số tin nhắn tối đa
