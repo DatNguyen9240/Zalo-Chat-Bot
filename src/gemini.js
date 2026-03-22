@@ -3,19 +3,25 @@ const path = require("path");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY, GEMINI_MODEL } = require("./config");
 const { SYSTEM_PROMPT, SESSION_TTL, REPLIES } = require("./constants");
+const { enqueue } = require("./queue");
 const log = require("./logger");
 
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
 
-// Load tài liệu từ data/knowledge.txt
+// Load tất cả file .txt từ data/
 let knowledge = "";
-const knowledgePath = path.join(__dirname, "..", "data", "knowledge.txt");
+const dataDir = path.join(__dirname, "..", "data");
 try {
-  knowledge = fs.readFileSync(knowledgePath, "utf-8");
-  log.info(`📚 Loaded knowledge (${knowledge.length} chars)`);
+  const files = fs.readdirSync(dataDir).filter((f) => f.endsWith(".txt"));
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(dataDir, file), "utf-8");
+    knowledge += content + "\n\n";
+    log.info(`📚 Loaded: ${file} (${content.length} chars)`);
+  }
+  if (!knowledge) log.warn("Không tìm thấy file .txt trong data/");
 } catch {
-  log.warn("Không tìm thấy data/knowledge.txt — bot trả lời chung chung");
+  log.warn("Không tìm thấy thư mục data/ — bot trả lời chung chung");
 }
 
 // System instruction cho Gemini
@@ -81,30 +87,31 @@ async function callWithRetry(fn, retries = 2) {
 }
 
 async function generateReply(chatId, messageText) {
-  try {
-    log.debug(`🧠 Generating reply for ${chatId}...`);
-    const chat = getOrCreateChat(chatId);
+  return enqueue(async () => {
+    try {
+      log.debug(`🧠 Generating reply for ${chatId}...`);
+      const chat = getOrCreateChat(chatId);
 
-    // Timeout cho Gemini API (30s)
-    const timeoutMs = 30000;
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Gemini timeout")), timeoutMs)
-    );
+      const timeoutMs = 30000;
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Gemini timeout")), timeoutMs)
+      );
 
-    const result = await callWithRetry(() =>
-      Promise.race([chat.sendMessage(messageText), timeoutPromise])
-    );
-    const reply = result.response.text();
-    log.debug(`🧠 Reply: ${reply.substring(0, 80)}...`);
-    return reply;
-  } catch (err) {
-    if (err.message === "Gemini timeout") {
-      log.error("Gemini timeout — quá 30s không phản hồi");
-      return "Xin lỗi, tôi đang xử lý chậm. Vui lòng thử lại! 🙏";
+      const result = await callWithRetry(() =>
+        Promise.race([chat.sendMessage(messageText), timeoutPromise])
+      );
+      const reply = result.response.text();
+      log.debug(`🧠 Reply: ${reply.substring(0, 80)}...`);
+      return reply;
+    } catch (err) {
+      if (err.message === "Gemini timeout") {
+        log.error("Gemini timeout — quá 30s không phản hồi");
+        return "Xin lỗi, tôi đang xử lý chậm. Vui lòng thử lại! 🙏";
+      }
+      log.error("Gemini error:", err.message);
+      return REPLIES.error;
     }
-    log.error("Gemini error:", err.message);
-    return REPLIES.error;
-  }
+  });
 }
 
 function getSessionCount() {

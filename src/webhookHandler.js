@@ -2,6 +2,7 @@ const { WEBHOOK_SECRET, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW } = require("./config"
 const { KEYWORDS, PHOTO_CAPTIONS, REPLIES, PRODUCT_IMAGES, matchKeywords } = require("./constants");
 const { generateReply } = require("./gemini");
 const { sendMessage, sendPhoto, sendSticker, sendTyping } = require("./zaloBot");
+const { saveChatMessage, trackEvent } = require("./database");
 const log = require("./logger");
 
 // Lấy base URL từ request (ngrok URL)
@@ -77,6 +78,10 @@ function setupWebhook(app) {
         if (chatId && text && !from?.is_bot) {
           log.info(`💬 ${from.display_name}: ${text}`);
 
+          // Track & save
+          trackEvent("message", chatId);
+          saveChatMessage(chatId, from.display_name, "user", text);
+
           if (isRateLimited(chatId)) {
             await sendMessage(chatId, REPLIES.rateLimited);
             break;
@@ -86,24 +91,32 @@ function setupWebhook(app) {
           const reply = await generateReply(chatId, text);
           await sendMessage(chatId, reply);
 
+          // Lưu reply của bot
+          saveChatMessage(chatId, "Bot", "bot", reply);
+
           // Gửi ảnh sản phẩm theo từ khóa
           const baseUrl = getBaseUrl(req);
           if (matchKeywords(text, KEYWORDS.greeting)) {
             await sendPhoto(chatId, baseUrl + PRODUCT_IMAGES.banner, PHOTO_CAPTIONS.banner);
+            trackEvent("photo_sent", chatId);
           } else if (matchKeywords(text, KEYWORDS.price)) {
             await sendPhoto(chatId, baseUrl + PRODUCT_IMAGES.product, PHOTO_CAPTIONS.product);
+            trackEvent("photo_sent", chatId);
           } else if (matchKeywords(text, KEYWORDS.promo)) {
             await sendPhoto(chatId, baseUrl + PRODUCT_IMAGES.promo, PHOTO_CAPTIONS.promo);
+            trackEvent("photo_sent", chatId);
           }
         }
         break;
       }
 
       case "message.image.received":
+        trackEvent("image_received", chatId);
         if (chatId) await sendMessage(chatId, REPLIES.image);
         break;
 
       case "message.sticker.received": {
+        trackEvent("sticker_received", chatId);
         const stickerId = message?.sticker;
         if (chatId) {
           if (stickerId) {
@@ -116,6 +129,7 @@ function setupWebhook(app) {
       }
 
       case "message.unsupported.received":
+        trackEvent("unsupported", chatId);
         if (chatId) await sendMessage(chatId, REPLIES.unsupported);
         break;
 
