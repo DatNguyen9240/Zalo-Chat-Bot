@@ -1,6 +1,6 @@
 const { WEBHOOK_SECRET } = require("./config");
 const { PRODUCT_IMAGES } = require("./constants");
-const { handleTextMessage, handleFollowEvent, handleImageMessage, handleStickerMessage } = require("./messageHandler");
+const { handleTextMessage, handleImageMessage, handleStickerMessage } = require("./messageHandler");
 const log = require("./logger");
 
 // Lấy base URL từ request (ngrok URL)
@@ -58,17 +58,6 @@ function setupWebhook(app) {
       case "message.unsupported.received":
         // Không reply — tránh gửi tin nhắn thừa
         break;
-
-      // User mới follow hoặc bắt đầu chat → gửi lời chào
-      case "user.followed":
-      case "user.started": {
-        const followChatId = message?.chat?.id || data?.chat?.id;
-        const followFrom = message?.from || data?.from;
-        if (followChatId) {
-          await handleFollowEvent(followChatId, followFrom);
-        }
-        break;
-      }
 
       default:
         log.debug(`Unhandled: ${event_name}`);

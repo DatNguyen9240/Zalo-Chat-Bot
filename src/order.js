@@ -199,7 +199,7 @@ function createOrderFromParsed(chatId, displayName, parsed) {
     `Người nhận: ${parsed.customerName}\n` +
     `SĐT: ${parsed.phone}\n` +
     `Địa chỉ: ${parsed.address}\n\n` +
-    `Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏`
+    `Cảm ơn ${displayName}! Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏`
   );
 }
 

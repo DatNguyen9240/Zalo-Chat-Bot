@@ -269,6 +269,10 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
   });
 }
 
+function hasActiveSession(chatId) {
+  return chatSessions.has(chatId);
+}
+
 function getSessionCount() {
   return chatSessions.size;
 }
@@ -282,4 +286,4 @@ function cleanup() {
   log.info("🧹 Sessions cleaned up");
 }
 
-module.exports = { generateReply, getSessionCount, cleanup };
+module.exports = { generateReply, hasActiveSession, getSessionCount, cleanup };

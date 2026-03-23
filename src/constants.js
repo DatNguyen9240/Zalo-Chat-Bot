@@ -68,8 +68,18 @@ const PHOTO_CAPTIONS = {
 // Tin nhắn mẫu cho các loại event
 // ============================================================
 const REPLIES = {
-  welcome:
-    "Xin chào bạn! 🍵✨\n\n" +
+  image: "Tôi đã nhận được hình ảnh! Hiện tại tôi chỉ hỗ trợ tin nhắn text. Bạn có thể mô tả bằng chữ được không? 😊",
+  sticker: "😄",
+  unsupported: "Xin lỗi, tôi chưa hỗ trợ loại tin nhắn này. Vui lòng gửi tin nhắn text nhé! 📝",
+  rateLimited: "Bạn gửi tin nhắn quá nhanh. Vui lòng đợi chút rồi thử lại nhé! ⏳",
+  error: "Xin lỗi, tôi đang gặp sự cố. Vui lòng thử lại sau! 🙏",
+};
+
+// Welcome message — cá nhân hóa theo tên user
+function getWelcomeMessage(name) {
+  const greeting = name ? `Xin chào ${name}!` : "Xin chào bạn!";
+  return (
+    `${greeting} 🍵✨\n\n` +
     "Chào mừng bạn đến với Trà Lài Shop ạ!\n" +
     "Bên mình chuyên trà lài Bình Long — thơm tự nhiên, vị thanh mát.\n\n" +
     "📋 Menu sản phẩm:\n" +
@@ -80,13 +90,9 @@ const REPLIES = {
     "👉 \"Đặt hàng\" để mua trà\n" +
     "👉 \"Giá\" để xem bảng giá chi tiết\n" +
     "👉 \"Khuyến mãi\" để xem ưu đãi\n\n" +
-    "Mình sẵn sàng hỗ trợ bạn nhé! 😊",
-  image: "Tôi đã nhận được hình ảnh! Hiện tại tôi chỉ hỗ trợ tin nhắn text. Bạn có thể mô tả bằng chữ được không? 😊",
-  sticker: "😄",
-  unsupported: "Xin lỗi, tôi chưa hỗ trợ loại tin nhắn này. Vui lòng gửi tin nhắn text nhé! 📝",
-  rateLimited: "Bạn gửi tin nhắn quá nhanh. Vui lòng đợi chút rồi thử lại nhé! ⏳",
-  error: "Xin lỗi, tôi đang gặp sự cố. Vui lòng thử lại sau! 🙏",
-};
+    "Mình sẵn sàng hỗ trợ bạn nhé! 😊"
+  );
+}
 
 // ============================================================
 // Từ khóa xác nhận đơn hàng — tập trung 1 chỗ
@@ -239,6 +245,7 @@ module.exports = {
   KEYWORDS,
   PHOTO_CAPTIONS,
   REPLIES,
+  getWelcomeMessage,
   ORDER_KEYWORDS,
   ORDER_REPLIES,
   CACHE_ENTRIES,
