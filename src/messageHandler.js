@@ -138,6 +138,18 @@ async function handlePendingOrder(chatId, text) {
 }
 
 // ============================================================
+// Xử lý user mới follow / bắt đầu chat
+// ============================================================
+async function handleFollowEvent(chatId, from) {
+  const name = from?.display_name || "bạn";
+  log.info(`👋 New follower: ${name} (${chatId})`);
+  trackEvent("user_followed", chatId);
+
+  await sendMessage(chatId, REPLIES.welcome);
+  saveChatMessage(chatId, "Bot", "bot", REPLIES.welcome);
+}
+
+// ============================================================
 // Xử lý các loại message khác
 // ============================================================
 async function handleImageMessage(chatId) {
@@ -159,6 +171,7 @@ async function handleStickerMessage(chatId, message) {
 
 module.exports = {
   handleTextMessage,
+  handleFollowEvent,
   handleImageMessage,
   handleStickerMessage,
 };

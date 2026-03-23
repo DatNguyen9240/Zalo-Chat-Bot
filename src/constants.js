@@ -68,6 +68,19 @@ const PHOTO_CAPTIONS = {
 // Tin nhắn mẫu cho các loại event
 // ============================================================
 const REPLIES = {
+  welcome:
+    "Xin chào bạn! 🍵✨\n\n" +
+    "Chào mừng bạn đến với Trà Lài Shop ạ!\n" +
+    "Bên mình chuyên trà lài Bình Long — thơm tự nhiên, vị thanh mát.\n\n" +
+    "📋 Menu sản phẩm:\n" +
+    "  🍃 Gói 100g — 50.000đ\n" +
+    "  🍃 Gói 250g — 110.000đ ⭐\n" +
+    "  🍃 Gói 500g — 200.000đ 🔥\n\n" +
+    "Bạn có thể nhắn:\n" +
+    "👉 \"Đặt hàng\" để mua trà\n" +
+    "👉 \"Giá\" để xem bảng giá chi tiết\n" +
+    "👉 \"Khuyến mãi\" để xem ưu đãi\n\n" +
+    "Mình sẵn sàng hỗ trợ bạn nhé! 😊",
   image: "Tôi đã nhận được hình ảnh! Hiện tại tôi chỉ hỗ trợ tin nhắn text. Bạn có thể mô tả bằng chữ được không? 😊",
   sticker: "😄",
   unsupported: "Xin lỗi, tôi chưa hỗ trợ loại tin nhắn này. Vui lòng gửi tin nhắn text nhé! 📝",

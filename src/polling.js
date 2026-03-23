@@ -1,14 +1,14 @@
 const axios = require("axios");
 const { BOT_API } = require("./config");
 const { PRODUCT_IMAGES_PLACEHOLDER } = require("./constants");
-const { handleTextMessage, handleImageMessage, handleStickerMessage } = require("./messageHandler");
+const { handleTextMessage, handleFollowEvent, handleImageMessage, handleStickerMessage } = require("./messageHandler");
 const log = require("./logger");
 
 // Xử lý 1 update event
 async function handleUpdate(update) {
   const { event_name, message } = update;
 
-  if (!event_name || !message) return;
+  if (!event_name) return;
 
   const chatId = message?.chat?.id;
   const from = message?.from;
@@ -35,6 +35,17 @@ async function handleUpdate(update) {
 
     case "message.unsupported.received":
       break;
+
+    // User mới follow hoặc bắt đầu chat → gửi lời chào
+    case "user.followed":
+    case "user.started": {
+      const followChatId = message?.chat?.id;
+      const followFrom = message?.from;
+      if (followChatId) {
+        await handleFollowEvent(followChatId, followFrom);
+      }
+      break;
+    }
 
     default:
       log.debug(`Unhandled: ${event_name}`);
