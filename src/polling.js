@@ -1,11 +1,7 @@
 const axios = require("axios");
 const { BOT_API } = require("./config");
-const { KEYWORDS, PHOTO_CAPTIONS, REPLIES, PRODUCT_IMAGES_PLACEHOLDER, matchKeywords } = require("./constants");
-const { generateReply } = require("./gemini");
-const { getCachedReply } = require("./cache");
-const { tryParseOrder, createOrderFromParsed } = require("./order");
-const { sendMessage, sendPhoto, sendSticker, sendTyping } = require("./zaloBot");
-const { saveChatMessage, trackEvent } = require("./database");
+const { PRODUCT_IMAGES_PLACEHOLDER } = require("./constants");
+const { handleTextMessage, handleImageMessage, handleStickerMessage } = require("./messageHandler");
 const log = require("./logger");
 
 // Xử lý 1 update event
@@ -23,70 +19,21 @@ async function handleUpdate(update) {
     case "message.text.received": {
       const text = message?.text;
       if (chatId && text && !from?.is_bot) {
-        log.info(`💬 ${from.display_name}: ${text}`);
-
-        trackEvent("message", chatId);
-        saveChatMessage(chatId, from.display_name, "user", text);
-
-        // 1) Thử parse đơn hàng trực tiếp
-        const parsed = tryParseOrder(text);
-        if (parsed) {
-          const orderReply = createOrderFromParsed(chatId, from.display_name, parsed);
-          await sendMessage(chatId, orderReply);
-          saveChatMessage(chatId, "Bot", "bot", orderReply);
-          break;
-        }
-
-        // 2) Cache
-        const cached = getCachedReply(text);
-        let reply;
-
-        if (cached) {
-          reply = cached;
-        } else {
-          // 3) Gemini AI
-          await sendTyping(chatId);
-          reply = await generateReply(chatId, text, from.display_name);
-        }
-
-        await sendMessage(chatId, reply);
-        saveChatMessage(chatId, "Bot", "bot", reply);
-
-        // Gửi ảnh sản phẩm theo từ khóa
-        if (matchKeywords(text, KEYWORDS.greeting)) {
-          await sendPhoto(chatId, PRODUCT_IMAGES_PLACEHOLDER.banner, PHOTO_CAPTIONS.banner);
-          trackEvent("photo_sent", chatId);
-        } else if (matchKeywords(text, KEYWORDS.price)) {
-          await sendPhoto(chatId, PRODUCT_IMAGES_PLACEHOLDER.product, PHOTO_CAPTIONS.product);
-          trackEvent("photo_sent", chatId);
-        } else if (matchKeywords(text, KEYWORDS.promo)) {
-          await sendPhoto(chatId, PRODUCT_IMAGES_PLACEHOLDER.promo, PHOTO_CAPTIONS.promo);
-          trackEvent("photo_sent", chatId);
-        }
+        const getPhotoUrl = (type) => PRODUCT_IMAGES_PLACEHOLDER[type];
+        await handleTextMessage(chatId, from, text, getPhotoUrl);
       }
       break;
     }
 
     case "message.image.received":
-      trackEvent("image_received", chatId);
-      if (chatId) await sendMessage(chatId, REPLIES.image);
+      await handleImageMessage(chatId);
       break;
 
-    case "message.sticker.received": {
-      trackEvent("sticker_received", chatId);
-      const stickerId = message?.sticker;
-      if (chatId) {
-        if (stickerId) {
-          await sendSticker(chatId, stickerId);
-        } else {
-          await sendMessage(chatId, REPLIES.sticker);
-        }
-      }
+    case "message.sticker.received":
+      await handleStickerMessage(chatId, message);
       break;
-    }
 
     case "message.unsupported.received":
-      trackEvent("unsupported", chatId);
       break;
 
     default:

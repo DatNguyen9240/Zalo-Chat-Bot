@@ -60,7 +60,7 @@ const KEYWORDS = {
 // ============================================================
 const PHOTO_CAPTIONS = {
   banner: "🍵 Trà Lài Bình Long — Thơm tự nhiên, vị thanh mát!",
-  product: "📋 100g: 50k | 250g: 110k | 500g: 200k",
+  product: "📋 " + PRODUCTS.map(p => `${p.name.replace("Trà Lài ", "")}: ${(p.price / 1000)}k`).join(" | "),
   promo: "🎁 Mua 2 tặng 1 | FREE SHIP từ 500k | Giảm 10% khách mới",
 };
 
@@ -73,6 +73,25 @@ const REPLIES = {
   unsupported: "Xin lỗi, tôi chưa hỗ trợ loại tin nhắn này. Vui lòng gửi tin nhắn text nhé! 📝",
   rateLimited: "Bạn gửi tin nhắn quá nhanh. Vui lòng đợi chút rồi thử lại nhé! ⏳",
   error: "Xin lỗi, tôi đang gặp sự cố. Vui lòng thử lại sau! 🙏",
+};
+
+// ============================================================
+// Từ khóa xác nhận đơn hàng — tập trung 1 chỗ
+// ============================================================
+const ORDER_KEYWORDS = {
+  confirm: ["ok", "xác nhận", "đồng ý", "confirm", "yes", "có"],
+  cancel: ["hủy", "không", "thôi", "cancel", "no"],
+  edit: ["sửa", "chỉnh", "thay đổi", "edit", "change", "sửa lại"],
+};
+
+// ============================================================
+// Tin nhắn đơn hàng — tập trung 1 chỗ
+// ============================================================
+const ORDER_REPLIES = {
+  reminder: 'Bạn đang có đơn hàng chờ xác nhận. Vui lòng trả lời:\n• "OK" → xác nhận đơn\n• "Hủy" → hủy đơn\n• "Sửa" → sửa lại thông tin',
+  editPrompt: "✏️ Đã hủy đơn cũ. Bạn vui lòng nhập lại thông tin đặt hàng nhé!\n\nVí dụ: Trà Lài 250g, 2 gói, Nguyễn Văn A, 0901234567, Q1 HCM",
+  expired: "Đơn hàng đã hết hạn hoặc đã được xử lý. Vui lòng đặt lại nhé! 🙏",
+  noOrder: "Không có đơn hàng nào để hủy.",
 };
 
 // ============================================================
@@ -207,6 +226,8 @@ module.exports = {
   KEYWORDS,
   PHOTO_CAPTIONS,
   REPLIES,
+  ORDER_KEYWORDS,
+  ORDER_REPLIES,
   CACHE_ENTRIES,
   matchKeywords,
 };

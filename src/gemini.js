@@ -4,7 +4,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY, GEMINI_MODEL } = require("./config");
 const { SYSTEM_PROMPT, SESSION_TTL, REPLIES, PRODUCTS } = require("./constants");
 const { enqueue } = require("./queue");
-const { saveOrder } = require("./database");
+const { createPendingOrder } = require("./order");
 const { trackEvent } = require("./database");
 const log = require("./logger");
 
@@ -46,7 +46,7 @@ const ORDER_TOOL = {
           },
           address: {
             type: "string",
-            description: "Địa chỉ giao hàng",
+            description: "Địa chỉ giao hàng chi tiết (số nhà, đường, phường/xã, quận/huyện, tỉnh/TP)",
           },
         },
         required: ["product", "quantity", "customer_name", "phone", "address"],
@@ -91,8 +91,10 @@ const SYSTEM_INSTRUCTION = {
         "2. Hỏi số lượng (nếu chưa nói)\n" +
         "3. Hỏi họ tên người nhận\n" +
         "4. Hỏi SĐT\n" +
-        "5. Hỏi địa chỉ giao hàng\n" +
+        "5. Hỏi địa chỉ giao hàng CHI TIẾT (số nhà, đường, phường/xã, quận/huyện, tỉnh/TP). Nếu khách chỉ nói tên quận hoặc tỉnh, hãy hỏi lại địa chỉ cụ thể hơn.\n" +
         "Khi ĐÃ CÓ ĐỦ 5 thông tin trên, gọi function create_order.\n" +
+        "Sau khi gọi function, hệ thống sẽ tự động hiển thị đơn hàng cho khách xác nhận. KHÔNG cần nói thêm gì — hệ thống đã xử lý.\n" +
+        "Chỉ cần nói ngắn gọn như 'Mình đã tạo đơn hàng cho bạn, vui lòng kiểm tra và xác nhận nhé!'\n" +
         "Khách có thể cung cấp nhiều thông tin cùng lúc — hãy tự extract.\n" +
         "Nếu khách nói sai tên sản phẩm, gợi ý đúng tên.\n\n" +
         "## Menu sản phẩm\n" +
@@ -166,42 +168,25 @@ function handleFunctionCall(functionCall, chatId, displayName) {
       return { result: { error: "Sản phẩm không tìm thấy" } };
     }
 
-    const totalPrice = product.price * args.quantity;
-
-    // Lưu vào DB
-    const orderId = saveOrder({
-      chatId,
-      displayName,
-      product: product.name,
+    const parsed = {
+      product,
       quantity: args.quantity,
-      totalPrice,
       customerName: args.customer_name,
       phone: args.phone,
       address: args.address,
-    });
+    };
 
-    trackEvent("order_created", chatId);
-
-    // Gửi lên Google Sheets (async)
-    const { sendToGoogleSheet } = require("./order");
-    sendToGoogleSheet({
-      orderId,
-      displayName,
-      product: product.name,
-      quantity: args.quantity,
-      totalPrice,
-      customerName: args.customer_name,
-      phone: args.phone,
-      address: args.address,
-    });
+    // Tạo pending order (chờ xác nhận) — trả về plain text
+    const orderMessage = createPendingOrder(chatId, displayName, parsed);
 
     return {
       result: {
         success: true,
-        orderId,
+        pending: true,
+        message: orderMessage,
         product: product.name,
         quantity: args.quantity,
-        totalPrice,
+        totalPrice: product.price * args.quantity,
         customerName: args.customer_name,
         phone: args.phone,
         address: args.address,
@@ -234,12 +219,19 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
 
       // Kiểm tra function call
       const functionCalls = response.functionCalls();
+      let pendingOrderMessage = null;
+
       if (functionCalls && functionCalls.length > 0) {
         const fc = functionCalls[0];
         log.info(`🔧 Function call: ${fc.name}(${JSON.stringify(fc.args)})`);
 
         // Thực thi function
         const functionResult = handleFunctionCall(fc, chatId, displayName);
+
+        // Lưu message đơn hàng nếu có (pending order)
+        if (functionResult.result?.message) {
+          pendingOrderMessage = functionResult.result.message;
+        }
 
         // Gửi kết quả về Gemini để nó tạo phản hồi cho user
         result = await callWithRetry(() =>
@@ -260,6 +252,11 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
 
       const reply = response.text();
       log.debug(`🧠 Reply: ${reply.substring(0, 80)}...`);
+
+      // Nếu có pending order, gửi message đơn hàng chi tiết thay vì text Gemini
+      if (pendingOrderMessage) {
+        return pendingOrderMessage;
+      }
       return reply;
     } catch (err) {
       if (err.message === "Gemini timeout") {

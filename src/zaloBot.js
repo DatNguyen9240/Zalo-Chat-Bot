@@ -53,6 +53,7 @@ async function sendMessage(chatId, text) {
   }
 }
 
+
 async function sendPhoto(chatId, photoUrl, caption = "") {
   try {
     const body = { chat_id: chatId, photo: photoUrl };

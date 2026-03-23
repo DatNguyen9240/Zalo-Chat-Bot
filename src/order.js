@@ -1,9 +1,83 @@
 const axios = require("axios");
 const { GOOGLE_SHEET_URL } = require("./config");
 const { PRODUCTS } = require("./constants");
-const { saveOrder } = require("./database");
-const { trackEvent } = require("./database");
+const { saveOrder, trackEvent } = require("./database");
 const log = require("./logger");
+
+// ============================================================
+// Pending Orders — chờ xác nhận trước khi lưu
+// ============================================================
+const pendingOrders = new Map(); // chatId -> { parsed, displayName, createdAt, timer }
+
+const PENDING_TIMEOUT = 5 * 60 * 1000; // 5 phút
+
+function createPendingOrder(chatId, displayName, parsed) {
+  // Xóa pending cũ nếu có
+  cancelPendingTimeout(chatId);
+
+  const totalPrice = parsed.product.price * parsed.quantity;
+  const priceStr = totalPrice.toLocaleString("vi-VN") + "đ";
+
+  // Lưu vào pending
+  const timer = setTimeout(() => {
+    pendingOrders.delete(chatId);
+    log.debug(`⏰ Pending order expired: ${chatId}`);
+  }, PENDING_TIMEOUT);
+
+  pendingOrders.set(chatId, { parsed, displayName, createdAt: Date.now(), timer });
+
+  const unitPriceStr = parsed.product.price.toLocaleString("vi-VN") + "đ";
+
+  // Trả về message preview (plain text, không buttons)
+  return (
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `    🛒  XÁC NHẬN ĐƠN HÀNG\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `Sản phẩm: ${parsed.product.name}\n` +
+    `Số lượng: ${parsed.quantity} gói\n` +
+    `Đơn giá: ${unitPriceStr}\n` +
+    `Tổng tiền: ${priceStr}\n\n` +
+    `Người nhận: ${parsed.customerName}\n` +
+    `SĐT: ${parsed.phone}\n` +
+    `Địa chỉ: ${parsed.address}\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `Trả lời: "OK" · "Hủy" · "Sửa"`
+  );
+}
+
+function confirmPendingOrder(chatId) {
+  const pending = pendingOrders.get(chatId);
+  if (!pending) return null;
+
+  const { parsed, displayName } = pending;
+  cancelPendingTimeout(chatId);
+  pendingOrders.delete(chatId);
+
+  // Tạo đơn thật
+  const result = createOrderFromParsed(chatId, displayName, parsed);
+  return result;
+}
+
+function cancelPendingOrder(chatId) {
+  const pending = pendingOrders.get(chatId);
+  if (!pending) return null;
+
+  cancelPendingTimeout(chatId);
+  pendingOrders.delete(chatId);
+
+  return "❌ Đã hủy đơn hàng. Nếu bạn muốn đặt lại, cứ nhắn mình nhé! 🙏";
+}
+
+function hasPendingOrder(chatId) {
+  return pendingOrders.has(chatId);
+}
+
+function cancelPendingTimeout(chatId) {
+  const pending = pendingOrders.get(chatId);
+  if (pending && pending.timer) {
+    clearTimeout(pending.timer);
+  }
+}
 
 // ============================================================
 // Parse đơn hàng từ text — KHÔNG CẦN GEMINI
@@ -116,13 +190,16 @@ function createOrderFromParsed(chatId, displayName, parsed) {
   const priceStr = totalPrice.toLocaleString("vi-VN") + "đ";
 
   return (
-    `✅ Đã ghi nhận đơn hàng #${orderId}!\n\n` +
-    `📦 ${parsed.quantity}x ${parsed.product.name}\n` +
-    `💰 Tổng: ${priceStr}\n` +
-    `👤 ${parsed.customerName}\n` +
-    `📱 ${parsed.phone}\n` +
-    `📍 ${parsed.address}\n\n` +
-    "Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏"
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `  ✅  ĐƠN HÀNG #${orderId}\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n\n` +
+    `Sản phẩm: ${parsed.product.name}\n` +
+    `Số lượng: ${parsed.quantity} gói\n` +
+    `Tổng tiền: ${priceStr}\n\n` +
+    `Người nhận: ${parsed.customerName}\n` +
+    `SĐT: ${parsed.phone}\n` +
+    `Địa chỉ: ${parsed.address}\n\n` +
+    `Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏`
   );
 }
 
@@ -143,4 +220,13 @@ async function sendToGoogleSheet(order) {
   }
 }
 
-module.exports = { tryParseOrder, createOrderFromParsed, sendToGoogleSheet };
+module.exports = {
+  tryParseOrder,
+  createOrderFromParsed,
+  createPendingOrder,
+  confirmPendingOrder,
+  cancelPendingOrder,
+  hasPendingOrder,
+  sendToGoogleSheet,
+};
+
