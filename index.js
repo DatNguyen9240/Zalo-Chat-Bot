@@ -3,7 +3,7 @@ const express = require("express");
 const path = require("path");
 const helmet = require("helmet");
 const cors = require("cors");
-const { PORT, BOT_MODE, GEMINI_MODEL, ADMIN_SECRET } = require("./src/config");
+const { PORT, BOT_MODE, GEMINI_MODEL, ADMIN_SECRET, WEBHOOK_SECRET, WEBHOOK_URL } = require("./src/config");
 const { getSessionCount, cleanup } = require("./src/gemini");
 const { registerWebhook, deleteWebhook, getWebhookInfo, getMe } = require("./src/zaloBot");
 const { setupWebhook } = require("./src/webhookHandler");
@@ -165,6 +165,11 @@ const server = app.listen(PORT, async () => {
   await getMe();
 
   if (BOT_MODE === "webhook") {
+    if (WEBHOOK_URL) {
+      // Auto-register webhook với URL từ env
+      const webhookEndpoint = WEBHOOK_URL.endsWith("/webhook") ? WEBHOOK_URL : WEBHOOK_URL + "/webhook";
+      await registerWebhook(webhookEndpoint, WEBHOOK_SECRET);
+    }
     await getWebhookInfo();
   }
 

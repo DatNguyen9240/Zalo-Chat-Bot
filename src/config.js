@@ -7,6 +7,7 @@ const {
   GEMINI_API_KEY,
   GEMINI_MODEL,
   WEBHOOK_SECRET,
+  WEBHOOK_URL,
   ADMIN_SECRET,
   LOG_LEVEL,
   RATE_LIMIT_MAX,
@@ -26,10 +27,11 @@ module.exports = {
   GEMINI_API_KEY,
   GEMINI_MODEL: GEMINI_MODEL || "gemini-2.5-flash",
   WEBHOOK_SECRET,
+  WEBHOOK_URL, // Public URL cho webhook (VD: https://your-app.up.railway.app/webhook)
   ADMIN_SECRET,
   BOT_API,
-  LOG_LEVEL: LOG_LEVEL || "info", // "debug" | "info" | "warn" | "error"
-  RATE_LIMIT_MAX: parseInt(RATE_LIMIT_MAX) || 10, // Số tin nhắn tối đa
-  RATE_LIMIT_WINDOW: parseInt(RATE_LIMIT_WINDOW) || 60000, // Trong khoảng thời gian (ms)
+  LOG_LEVEL: LOG_LEVEL || "info",
+  RATE_LIMIT_MAX: parseInt(RATE_LIMIT_MAX) || 10,
+  RATE_LIMIT_WINDOW: parseInt(RATE_LIMIT_WINDOW) || 60000,
   GOOGLE_SHEET_URL,
 };
