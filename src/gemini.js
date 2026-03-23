@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY, GEMINI_MODEL } = require("./config");
-const { SYSTEM_PROMPT, SESSION_TTL, REPLIES, PRODUCTS } = require("./constants");
+const { SYSTEM_PROMPT, SESSION_TTL, REPLIES, PRODUCTS, SHIPPING_ZONES, FREE_SHIP_THRESHOLD } = require("./constants");
 const { enqueue } = require("./queue");
 const { createPendingOrder } = require("./order");
 const { trackEvent } = require("./database");
@@ -99,6 +99,12 @@ const SYSTEM_INSTRUCTION = {
         "Nếu khách nói sai tên sản phẩm, gợi ý đúng tên.\n\n" +
         "## Menu sản phẩm\n" +
         PRODUCTS_TEXT +
+        "\n\n" +
+        "## Chính sách giao hàng\n" +
+        SHIPPING_ZONES.map((z) => `- ${z.name}: ${z.fee === 0 ? "MIỄN PHÍ" : z.fee.toLocaleString("vi-VN") + "đ"} (${z.time})`).join("\n") +
+        `\n- Đơn từ ${(FREE_SHIP_THRESHOLD / 1000)}k: MIỄN PHÍ SHIP toàn quốc` +
+        "\n- Shop bù một phần phí ship cho khách, giá thực tế GHTK/GHN cao hơn" +
+        "\n- Phí ship sẽ được tự động tính khi tạo đơn dựa trên địa chỉ khách nhập" +
         "\n\n" +
         (knowledge
           ? `## Tài liệu tham khảo\n${knowledge}`

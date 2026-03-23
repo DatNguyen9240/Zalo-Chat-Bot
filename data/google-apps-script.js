@@ -12,10 +12,10 @@ function doPost(e) {
     if (sheet.getLastRow() === 0) {
       sheet.appendRow([
         "Mã đơn", "Ngày đặt", "Khách (Zalo)", "Sản phẩm",
-        "Số lượng", "Tổng tiền", "Người nhận", "SĐT", "Địa chỉ", "Trạng thái"
+        "Số lượng", "Tổng tiền", "Người nhận", "SĐT", "Địa chỉ", "Khu vực ship", "Phí ship", "Trạng thái"
       ]);
       // Bold header
-      sheet.getRange(1, 1, 1, 10).setFontWeight("bold");
+      sheet.getRange(1, 1, 1, 12).setFontWeight("bold");
     }
 
     // Append đơn hàng
@@ -29,11 +29,13 @@ function doPost(e) {
       data.customerName,
       data.phone,
       data.address,
+      data.shippingZone || "",
+      data.shippingFee || 0,
       "Mới"
     ]);
 
     // Auto-resize columns
-    sheet.autoResizeColumns(1, 10);
+    sheet.autoResizeColumns(1, 12);
 
     return ContentService
       .createTextOutput(JSON.stringify({ ok: true }))

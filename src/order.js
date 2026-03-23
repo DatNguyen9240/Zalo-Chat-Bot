@@ -1,6 +1,6 @@
 const axios = require("axios");
 const { GOOGLE_SHEET_URL } = require("./config");
-const { PRODUCTS } = require("./constants");
+const { PRODUCTS, calculateShipping } = require("./constants");
 const { saveOrder, trackEvent } = require("./database");
 const log = require("./logger");
 
@@ -15,7 +15,9 @@ function createPendingOrder(chatId, displayName, parsed) {
   // Xóa pending cũ nếu có
   cancelPendingTimeout(chatId);
 
-  const totalPrice = parsed.product.price * parsed.quantity;
+  const totalProductPrice = parsed.product.price * parsed.quantity;
+  const shipping = calculateShipping(parsed.address, totalProductPrice);
+  const totalPrice = totalProductPrice + shipping.fee;
   const priceStr = totalPrice.toLocaleString("vi-VN") + "đ";
 
   // Lưu vào pending
@@ -27,6 +29,17 @@ function createPendingOrder(chatId, displayName, parsed) {
   pendingOrders.set(chatId, { parsed, displayName, createdAt: Date.now(), timer });
 
   const unitPriceStr = parsed.product.price.toLocaleString("vi-VN") + "đ";
+  const productTotalStr = totalProductPrice.toLocaleString("vi-VN") + "đ";
+
+  // Shipping line
+  let shipLine;
+  if (shipping.fee === 0 && shipping.originalFee === 0) {
+    shipLine = `Phí ship: MIỄN PHÍ (${shipping.zone})`;
+  } else if (shipping.freeShip) {
+    shipLine = `Phí ship: MIỄN PHÍ 🎁 (${shipping.zone} ~${shipping.originalFee.toLocaleString("vi-VN")}đ)`;
+  } else {
+    shipLine = `Phí ship: ${shipping.fee.toLocaleString("vi-VN")}đ (${shipping.zone}, ${shipping.time})`;
+  }
 
   // Trả về message preview (plain text, không buttons)
   return (
@@ -36,7 +49,9 @@ function createPendingOrder(chatId, displayName, parsed) {
     `Sản phẩm: ${parsed.product.name}\n` +
     `Số lượng: ${parsed.quantity} gói\n` +
     `Đơn giá: ${unitPriceStr}\n` +
-    `Tổng tiền: ${priceStr}\n\n` +
+    `Tiền hàng: ${productTotalStr}\n` +
+    `${shipLine}\n` +
+    `Tổng thanh toán: ${priceStr}\n\n` +
     `Người nhận: ${parsed.customerName}\n` +
     `SĐT: ${parsed.phone}\n` +
     `Địa chỉ: ${parsed.address}\n\n` +
@@ -161,7 +176,9 @@ function tryParseOrder(text) {
 // Tạo đơn hàng — gọi khi parse thành công
 // ============================================================
 function createOrderFromParsed(chatId, displayName, parsed) {
-  const totalPrice = parsed.product.price * parsed.quantity;
+  const totalProductPrice = parsed.product.price * parsed.quantity;
+  const shipping = calculateShipping(parsed.address, totalProductPrice);
+  const totalPrice = totalProductPrice + shipping.fee;
 
   const orderId = saveOrder({
     chatId,
@@ -183,11 +200,24 @@ function createOrderFromParsed(chatId, displayName, parsed) {
     customerName: parsed.customerName,
     phone: parsed.phone,
     address: parsed.address,
+    shippingZone: shipping.zone,
+    shippingFee: shipping.fee,
   });
 
   trackEvent("order_created", chatId);
 
   const priceStr = totalPrice.toLocaleString("vi-VN") + "đ";
+  const productTotalStr = totalProductPrice.toLocaleString("vi-VN") + "đ";
+
+  // Shipping line
+  let shipLine;
+  if (shipping.fee === 0 && shipping.originalFee === 0) {
+    shipLine = `Phí ship: MIỄN PHÍ (${shipping.zone})`;
+  } else if (shipping.freeShip) {
+    shipLine = `Phí ship: MIỄN PHÍ 🎁 (${shipping.zone})`;
+  } else {
+    shipLine = `Phí ship: ${shipping.fee.toLocaleString("vi-VN")}đ (${shipping.zone}, ${shipping.time})`;
+  }
 
   return (
     `━━━━━━━━━━━━━━━━━━━━\n` +
@@ -195,7 +225,9 @@ function createOrderFromParsed(chatId, displayName, parsed) {
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
     `Sản phẩm: ${parsed.product.name}\n` +
     `Số lượng: ${parsed.quantity} gói\n` +
-    `Tổng tiền: ${priceStr}\n\n` +
+    `Tiền hàng: ${productTotalStr}\n` +
+    `${shipLine}\n` +
+    `Tổng thanh toán: ${priceStr}\n\n` +
     `Người nhận: ${parsed.customerName}\n` +
     `SĐT: ${parsed.phone}\n` +
     `Địa chỉ: ${parsed.address}\n\n` +

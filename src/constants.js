@@ -24,6 +24,70 @@ const SESSION_TTL = 60 * 60 * 1000;
 const MAX_MESSAGE_LENGTH = 2000;
 
 // ============================================================
+// Phí ship — Shop bù một phần, giá thực tế GHTK/GHN cao hơn
+// ============================================================
+const FREE_SHIP_THRESHOLD = 300000; // Miễn phí ship đơn từ 300k
+
+const SHIPPING_ZONES = [
+  {
+    name: "Bình Long",
+    fee: 0,
+    time: "Trong ngày",
+    keywords: ["bình long", "binh long", "phú riềng", "phu rieng", "thanh lương", "thanh luong", "hưng chiến", "hung chien", "thanh phú", "thanh phu"],
+  },
+  {
+    name: "Bình Phước",
+    fee: 15000,
+    time: "1-2 ngày",
+    keywords: ["bình phước", "binh phuoc", "đồng xoài", "dong xoai", "phước long", "phuoc long", "bù đăng", "bu dang", "bù đốp", "bu dop", "lộc ninh", "loc ninh", "chơn thành", "chon thanh", "hớn quản", "hon quan", "đồng phú", "dong phu"],
+  },
+  {
+    name: "Miền Nam",
+    fee: 20000,
+    time: "2-3 ngày",
+    keywords: ["hcm", "hồ chí minh", "ho chi minh", "sài gòn", "sai gon", "bình dương", "binh duong", "đồng nai", "dong nai", "tây ninh", "tay ninh", "long an", "bà rịa", "ba ria", "vũng tàu", "vung tau", "bến tre", "ben tre", "tiền giang", "tien giang", "cần thơ", "can tho", "an giang", "kiên giang", "kien giang", "cà mau", "ca mau", "vĩnh long", "vinh long", "đồng tháp", "dong thap", "sóc trăng", "soc trang", "trà vinh", "tra vinh", "hậu giang", "hau giang", "bạc liêu", "bac lieu", "lâm đồng", "lam dong", "đắk nông", "dak nong", "đắk lắk", "dak lak", "bình thuận", "binh thuan", "ninh thuận", "ninh thuan"],
+  },
+  {
+    name: "Miền Trung & Bắc",
+    fee: 30000,
+    time: "3-5 ngày",
+    keywords: ["hà nội", "ha noi", "đà nẵng", "da nang", "huế", "hue", "hải phòng", "hai phong", "quảng ninh", "quang ninh", "nghệ an", "nghe an", "thanh hóa", "thanh hoa", "hà tĩnh", "ha tinh", "quảng bình", "quang binh", "quảng trị", "quang tri", "quảng nam", "quang nam", "quảng ngãi", "quang ngai", "bình định", "binh dinh", "phú yên", "phu yen", "khánh hòa", "khanh hoa", "nha trang"],
+  },
+];
+
+/**
+ * Tính phí ship dựa trên địa chỉ
+ * @param {string} address - Địa chỉ giao hàng
+ * @param {number} totalProductPrice - Tổng tiền sản phẩm (chưa ship)
+ * @returns {{ zone: string, fee: number, time: string, freeShip: boolean }}
+ */
+function calculateShipping(address, totalProductPrice) {
+  const lower = address.toLowerCase();
+  const freeShip = totalProductPrice >= FREE_SHIP_THRESHOLD;
+
+  for (const zone of SHIPPING_ZONES) {
+    if (zone.keywords.some((kw) => lower.includes(kw))) {
+      return {
+        zone: zone.name,
+        fee: freeShip && zone.fee > 0 ? 0 : zone.fee,
+        originalFee: zone.fee,
+        time: zone.time,
+        freeShip: freeShip && zone.fee > 0,
+      };
+    }
+  }
+
+  // Mặc định: liên tỉnh xa
+  return {
+    zone: "Liên tỉnh",
+    fee: freeShip ? 0 : 30000,
+    originalFee: 30000,
+    time: "3-5 ngày",
+    freeShip,
+  };
+}
+
+// ============================================================
 // Sản phẩm — NGUỒN DUY NHẤT, sửa tại đây khi thay đổi menu
 // ============================================================
 const PRODUCTS = [
@@ -61,7 +125,7 @@ const KEYWORDS = {
 const PHOTO_CAPTIONS = {
   banner: "🍵 Trà Lài Bình Long — Thơm tự nhiên, vị thanh mát!",
   product: "📋 " + PRODUCTS.map(p => `${p.name.replace("Trà Lài ", "")}: ${(p.price / 1000)}k`).join(" | "),
-  promo: "🎁 Mua 2 tặng 1 | FREE SHIP từ 500k | Giảm 10% khách mới",
+  promo: "🎁 Mua 2 tặng 1 | FREE SHIP từ 300k | Giảm 10% khách mới",
 };
 
 // ============================================================
@@ -146,7 +210,7 @@ const CACHE_ENTRIES = [
       "  🍃 Gói 250g — 110.000đ ⭐ bán chạy nhất\n" +
       "  🍃 Gói 500g — 200.000đ 🔥 tiết kiệm nhất\n\n" +
       "🎁 Ưu đãi: Mua 2 gói 250g tặng 1 gói 100g!\n" +
-      "📦 FREE SHIP đơn từ 500k\n\n" +
+      "📦 FREE SHIP đơn từ 300k\n\n" +
       "Nhắn \"đặt hàng\" để mình hỗ trợ bạn nhé!",
   },
   {
@@ -155,9 +219,10 @@ const CACHE_ENTRIES = [
       "🚚 Chính sách giao hàng\n\n" +
       "  📍 Bình Long — MIỄN PHÍ, giao trong ngày\n" +
       "  📍 Bình Phước — 1-2 ngày, ship 15.000đ\n" +
-      "  📍 Toàn quốc — 2-5 ngày, ship 25-35.000đ\n\n" +
+      "  📍 Miền Nam (HCM, Đông Nam Bộ...) — 2-3 ngày, ship 20.000đ\n" +
+      "  📍 Miền Trung & Bắc — 3-5 ngày, ship 30.000đ\n\n" +
       "💳 Hỗ trợ COD (nhận hàng rồi thanh toán)\n" +
-      "🎁 Đơn từ 500k: FREE SHIP toàn quốc!\n\n" +
+      "🎁 Đơn từ 300k: FREE SHIP toàn quốc!\n\n" +
       "Giao qua GHTK/GHN — đảm bảo an toàn ạ!",
   },
   {
@@ -175,7 +240,7 @@ const CACHE_ENTRIES = [
     reply:
       "🎁 Ưu đãi đặc biệt tại Trà Lài Shop\n\n" +
       "  🔥 Mua 2 gói 250g → TẶNG 1 gói 100g\n" +
-      "  🔥 Đơn từ 500k → FREE SHIP toàn quốc\n" +
+      "  🔥 Đơn từ 300k → FREE SHIP toàn quốc\n" +
       "  🔥 Khách mới → Giảm ngay 10%\n\n" +
       "Ưu đãi có hạn — nhắn \"đặt hàng\" để mình hỗ trợ bạn nhé!",
   },
@@ -239,6 +304,9 @@ module.exports = {
   SYSTEM_PROMPT,
   SESSION_TTL,
   MAX_MESSAGE_LENGTH,
+  FREE_SHIP_THRESHOLD,
+  SHIPPING_ZONES,
+  calculateShipping,
   PRODUCTS,
   PRODUCT_IMAGES,
   PRODUCT_IMAGES_PLACEHOLDER,
