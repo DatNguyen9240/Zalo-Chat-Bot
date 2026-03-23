@@ -27,9 +27,9 @@ const MAX_MESSAGE_LENGTH = 2000;
 // Sản phẩm — NGUỒN DUY NHẤT, sửa tại đây khi thay đổi menu
 // ============================================================
 const PRODUCTS = [
-  { id: 1, name: "Trà Lài 100g", price: 50000, aliases: ["100g", "100 g", "100gram", "gói nhỏ"] },
-  { id: 2, name: "Trà Lài 250g", price: 110000, aliases: ["250g", "250 g", "250gram", "gói vừa"] },
-  { id: 3, name: "Trà Lài 500g", price: 200000, aliases: ["500g", "500 g", "500gram", "gói lớn"] },
+  { id: 1, name: "Trà Lài 100g", price: 50000, aliases: ["100g", "100 g", "100gram", "gói nhỏ", "goi nho"] },
+  { id: 2, name: "Trà Lài 250g", price: 110000, aliases: ["250g", "250 g", "250gram", "gói vừa", "goi vua"] },
+  { id: 3, name: "Trà Lài 500g", price: 200000, aliases: ["500g", "500 g", "500gram", "gói lớn", "goi lon"] },
 ];
 
 // Đường dẫn ảnh sản phẩm (relative URL)
@@ -50,9 +50,9 @@ const PRODUCT_IMAGES_PLACEHOLDER = {
 // Từ khóa trigger gửi ảnh sản phẩm
 // ============================================================
 const KEYWORDS = {
-  greeting: ["chào", "hello", "hi", "xin chào", "hey", "alo"],
-  price: ["giá", "bao nhiêu", "bảng giá", "price"],
-  promo: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "free ship"],
+  greeting: ["chào", "hello", "hi", "xin chào", "hey", "alo", "chao", "xin chao"],
+  price: ["giá", "bao nhiêu", "bảng giá", "price", "gia", "bao nhieu", "bang gia"],
+  promo: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "free ship", "khuyen mai", "giam gia", "uu dai"],
 };
 
 // ============================================================
@@ -79,9 +79,9 @@ const REPLIES = {
 // Từ khóa xác nhận đơn hàng — tập trung 1 chỗ
 // ============================================================
 const ORDER_KEYWORDS = {
-  confirm: ["ok", "xác nhận", "đồng ý", "confirm", "yes", "có"],
-  cancel: ["hủy", "không", "thôi", "cancel", "no"],
-  edit: ["sửa", "chỉnh", "thay đổi", "edit", "change", "sửa lại"],
+  confirm: ["ok", "xác nhận", "đồng ý", "confirm", "yes", "có", "xac nhan", "dong y", "co"],
+  cancel: ["hủy", "không", "thôi", "cancel", "no", "huy", "khong", "thoi"],
+  edit: ["sửa", "chỉnh", "thay đổi", "edit", "change", "sửa lại", "sua", "chinh", "thay doi", "sua lai"],
 };
 
 // ============================================================
@@ -99,7 +99,7 @@ const ORDER_REPLIES = {
 // ============================================================
 const CACHE_ENTRIES = [
   {
-    keywords: ["chào", "xin chào", "hello", "hi ", "hey", "alo"],
+    keywords: ["chào", "xin chào", "hello", "hi ", "hey", "alo", "chao", "xin chao"],
     reply:
       "Xin chào bạn! 🍵\n\n" +
       "Cảm ơn bạn đã ghé thăm Trà Lài Shop ạ!\n" +
@@ -108,7 +108,7 @@ const CACHE_ENTRIES = [
       "Bạn muốn tìm hiểu gì hay đặt hàng cứ nhắn mình nhé!",
   },
   {
-    keywords: ["đặt hàng", "đặt mua", "đặt gói", "mua hàng", "mua trà", "mua gói", "muốn mua", "muốn đặt", "order"],
+    keywords: ["đặt hàng", "đặt mua", "đặt gói", "mua hàng", "mua trà", "mua gói", "muốn mua", "muốn đặt", "order", "dat hang", "dat mua", "mua hang", "mua tra", "muon mua", "muon dat"],
     reply:
       "🛒 Đặt hàng Trà Lài Bình Long\n\n" +
       "📋 Menu sản phẩm:\n" +
@@ -120,7 +120,7 @@ const CACHE_ENTRIES = [
       "VD: Trà 250g, 2 gói, Nguyễn Văn A, 0901234567, Q1 TPHCM",
   },
   {
-    keywords: ["giá", "bao nhiêu", "bảng giá", "price"],
+    keywords: ["giá", "bao nhiêu", "bảng giá", "price", "gia", "bao nhieu", "bang gia"],
     reply:
       "💰 Bảng giá Trà Lài Bình Long\n\n" +
       "  🍃 Gói 100g — 50.000đ (dùng thử, làm quà)\n" +
@@ -131,7 +131,7 @@ const CACHE_ENTRIES = [
       "Nhắn \"đặt hàng\" để mình hỗ trợ bạn nhé!",
   },
   {
-    keywords: ["ship", "giao hàng", "vận chuyển", "phí ship", "free ship", "cod"],
+    keywords: ["ship", "giao hàng", "vận chuyển", "phí ship", "free ship", "cod", "giao hang", "van chuyen", "phi ship"],
     reply:
       "🚚 Chính sách giao hàng\n\n" +
       "  📍 Bình Long — MIỄN PHÍ, giao trong ngày\n" +
@@ -142,7 +142,7 @@ const CACHE_ENTRIES = [
       "Giao qua GHTK/GHN — đảm bảo an toàn ạ!",
   },
   {
-    keywords: ["cách pha", "pha trà", "pha sao", "pha như thế nào"],
+    keywords: ["cách pha", "pha trà", "pha sao", "pha như thế nào", "cach pha", "pha tra", "pha nhu the nao"],
     reply:
       "☕ Hướng dẫn pha Trà Lài\n\n" +
       "  1️⃣ Cho 5-7g trà vào ấm\n" +
@@ -152,7 +152,7 @@ const CACHE_ENTRIES = [
       "💡 Mẹo: Đừng dùng nước sôi 100°C — sẽ mất hương thơm tự nhiên nhé!",
   },
   {
-    keywords: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "voucher"],
+    keywords: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "voucher", "khuyen mai", "giam gia", "uu dai"],
     reply:
       "🎁 Ưu đãi đặc biệt tại Trà Lài Shop\n\n" +
       "  🔥 Mua 2 gói 250g → TẶNG 1 gói 100g\n" +
@@ -161,7 +161,7 @@ const CACHE_ENTRIES = [
       "Ưu đãi có hạn — nhắn \"đặt hàng\" để mình hỗ trợ bạn nhé!",
   },
   {
-    keywords: ["hạn sử dụng", "bảo quản", "hạn dùng", "hết hạn"],
+    keywords: ["hạn sử dụng", "bảo quản", "hạn dùng", "hết hạn", "han su dung", "bao quan", "han dung", "het han"],
     reply:
       "📅 Thông tin bảo quản\n\n" +
       "  ⏳ Hạn sử dụng: 12 tháng từ ngày sản xuất\n" +
@@ -170,7 +170,7 @@ const CACHE_ENTRIES = [
       "Trà của mình luôn gửi hàng mới nhất đến tay bạn ạ!",
   },
   {
-    keywords: ["trà lài là gì", "trà nhài", "trà hoa nhài", "jasmine tea"],
+    keywords: ["trà lài là gì", "trà nhài", "trà hoa nhài", "jasmine tea", "tra lai la gi", "tra nhai", "tra hoa nhai"],
     reply:
       "🍵 Trà Lài — Hương vị thiên nhiên Việt Nam\n\n" +
       "Trà Lài (trà hoa nhài) là trà xanh ướp hoa nhài tươi:\n" +
@@ -180,7 +180,7 @@ const CACHE_ENTRIES = [
       "Giá chỉ từ 50.000đ/100g — nhắn \"đặt hàng\" để thử ngay!",
   },
   {
-    keywords: ["liên hệ", "số điện thoại", "sdt", "zalo shop"],
+    keywords: ["liên hệ", "số điện thoại", "sdt", "zalo shop", "lien he", "so dien thoai"],
     reply:
       "📞 Liên hệ Trà Lài Shop\n\n" +
       "  👉 Zalo: 0975324568\n" +
@@ -188,13 +188,13 @@ const CACHE_ENTRIES = [
       "Hoặc nhắn \"đặt hàng\" để bot hỗ trợ bạn đặt ngay ạ! 🛒",
   },
   {
-    keywords: ["hình", "ảnh", "xem sản phẩm", "hình ảnh"],
+    keywords: ["hình", "ảnh", "xem sản phẩm", "hình ảnh", "hinh", "anh", "xem san pham", "hinh anh"],
     reply:
       "📸 Mình gửi hình sản phẩm cho bạn nhé!\n\n" +
       "Muốn xem thêm hình thực tế → Nhắn Zalo: 0975324568 ạ!",
   },
   {
-    keywords: ["thanh toán", "chuyển khoản", "trả tiền"],
+    keywords: ["thanh toán", "chuyển khoản", "trả tiền", "thanh toan", "chuyen khoan", "tra tien"],
     reply:
       "💳 Phương thức thanh toán\n\n" +
       "  1️⃣ COD — Nhận hàng rồi thanh toán\n" +
@@ -202,7 +202,7 @@ const CACHE_ENTRIES = [
       "Nhắn Zalo: 0975324568 để mình gửi thông tin tài khoản ạ!",
   },
   {
-    keywords: ["cảm ơn", "thanks", "thank", "ok cảm ơn"],
+    keywords: ["cảm ơn", "thanks", "thank", "ok cảm ơn", "cam on", "ok cam on"],
     reply:
       "Dạ không có gì ạ! 🙏\n" +
       "Cảm ơn bạn đã quan tâm đến Trà Lài Shop.\n" +
