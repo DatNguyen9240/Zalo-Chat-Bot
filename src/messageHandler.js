@@ -60,11 +60,13 @@ async function handleTextMessage(chatId, from, text, getPhotoUrl) {
   }
 
   // Gửi welcome nếu session mới (user lần đầu hoặc session đã hết hạn)
+  let sentWelcome = false;
   if (!hasActiveSession(chatId)) {
     const welcomeMsg = getWelcomeMessage(from.display_name);
     log.info(`👋 New/expired session — sending welcome to ${from.display_name} (${chatId})`);
     await sendMessage(chatId, welcomeMsg);
     saveChatMessage(chatId, "Bot", "bot", welcomeMsg);
+    sentWelcome = true;
   }
 
   // 0) Kiểm tra đơn hàng chờ xác nhận
@@ -87,7 +89,7 @@ async function handleTextMessage(chatId, from, text, getPhotoUrl) {
   const lower = text.toLowerCase();
   const mentionsProduct = PRODUCTS.some(p => p.aliases.some(a => lower.includes(a)));
 
-  const cached = !mentionsProduct ? getCachedReply(text) : null;
+  const cached = (!mentionsProduct && !sentWelcome) ? getCachedReply(text) : null;
   let reply;
 
   if (cached) {

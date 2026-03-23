@@ -50,7 +50,7 @@ const PRODUCT_IMAGES_PLACEHOLDER = {
 // Từ khóa trigger gửi ảnh sản phẩm
 // ============================================================
 const KEYWORDS = {
-  greeting: ["chào", "hello", "hi", "xin chào", "hey", "alo", "chao", "xin chao"],
+  greeting: ["chào", "hello", "hi", "xin chào", "hey", "alo", "lô", "lo", "chao", "xin chao"],
   price: ["giá", "bao nhiêu", "bảng giá", "price", "gia", "bao nhieu", "bang gia"],
   promo: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "free ship", "khuyen mai", "giam gia", "uu dai"],
 };
@@ -118,7 +118,7 @@ const ORDER_REPLIES = {
 // ============================================================
 const CACHE_ENTRIES = [
   {
-    keywords: ["chào", "xin chào", "hello", "hi ", "hey", "alo", "chao", "xin chao"],
+    keywords: ["chào", "xin chào", "hello", "hi ", "hey", "alo", "lô", "lo", "chao", "xin chao"],
     reply:
       "Xin chào bạn! 🍵\n\n" +
       "Cảm ơn bạn đã ghé thăm Trà Lài Shop ạ!\n" +
