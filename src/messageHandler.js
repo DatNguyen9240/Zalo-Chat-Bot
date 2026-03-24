@@ -115,6 +115,9 @@ async function handleTextMessage(chatId, from, text, getPhotoUrl) {
     } else if (matchKeywords(text, KEYWORDS.promo)) {
       await sendPhoto(chatId, getPhotoUrl("promo"), PHOTO_CAPTIONS.promo);
       trackEvent("photo_sent", chatId);
+    } else if (matchKeywords(text, KEYWORDS.image)) {
+      await sendPhoto(chatId, getPhotoUrl("product"), PHOTO_CAPTIONS.product);
+      trackEvent("photo_sent", chatId);
     }
   }
 }

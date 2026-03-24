@@ -117,6 +117,7 @@ const KEYWORDS = {
   greeting: ["chào", "hello", "hi", "xin chào", "hey", "alo", "lô", "lo", "chao", "xin chao"],
   price: ["giá", "bao nhiêu", "bảng giá", "price", "gia", "bao nhieu", "bang gia"],
   promo: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "free ship", "khuyen mai", "giam gia", "uu dai"],
+  image: ["hình", "ảnh", "xem sản phẩm", "hình ảnh", "hinh", "anh", "xem san pham", "hinh anh", "xem hình", "xem hinh", "cho xem", "gửi hình", "gui hinh"],
 };
 
 // ============================================================
