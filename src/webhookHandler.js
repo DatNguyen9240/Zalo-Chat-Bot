@@ -11,7 +11,7 @@ function getBaseUrl(req) {
 }
 
 function setupWebhook(app) {
-  app.post("/webhook", async (req, res) => {
+  app.post("/webhook", (req, res) => {
     const body = req.body;
 
     // Xác thực secret token
@@ -31,40 +31,49 @@ function setupWebhook(app) {
       return res.sendStatus(200);
     }
 
+    // ✅ Trả 200 NGAY LẬP TỨC — Zalo không phải chờ bot xử lý xong
+    res.sendStatus(200);
+
+    // Xử lý message bất đồng bộ (không block webhook response)
     const chatId = message?.chat?.id;
     const from = message?.from;
 
     log.info(`📩 [${event_name}] ${from?.display_name || "Unknown"}`);
 
-    switch (event_name) {
-      case "message.text.received": {
-        const text = message?.text;
-        if (chatId && text && !from?.is_bot) {
-          const baseUrl = getBaseUrl(req);
-          const getPhotoUrl = (type) => baseUrl + PRODUCT_IMAGES[type];
-          await handleTextMessage(chatId, from, text, getPhotoUrl);
-        }
-        break;
+    processWebhookEvent(event_name, message, chatId, from, req).catch((err) => {
+      log.error(`Webhook processing error: ${err.message}`);
+    });
+  });
+}
+
+// Xử lý event bất đồng bộ — chạy sau khi đã trả 200
+async function processWebhookEvent(event_name, message, chatId, from, req) {
+  switch (event_name) {
+    case "message.text.received": {
+      const text = message?.text;
+      if (chatId && text && !from?.is_bot) {
+        const baseUrl = getBaseUrl(req);
+        const getPhotoUrl = (type) => baseUrl + PRODUCT_IMAGES[type];
+        await handleTextMessage(chatId, from, text, getPhotoUrl);
       }
-
-      case "message.image.received":
-        await handleImageMessage(chatId);
-        break;
-
-      case "message.sticker.received":
-        await handleStickerMessage(chatId, message);
-        break;
-
-      case "message.unsupported.received":
-        // Không reply — tránh gửi tin nhắn thừa
-        break;
-
-      default:
-        log.debug(`Unhandled: ${event_name}`);
+      break;
     }
 
-    res.sendStatus(200);
-  });
+    case "message.image.received":
+      await handleImageMessage(chatId);
+      break;
+
+    case "message.sticker.received":
+      await handleStickerMessage(chatId, message);
+      break;
+
+    case "message.unsupported.received":
+      // Không reply — tránh gửi tin nhắn thừa
+      break;
+
+    default:
+      log.debug(`Unhandled: ${event_name}`);
+  }
 }
 
 module.exports = { setupWebhook };

@@ -3,6 +3,34 @@ const { BOT_API } = require("./config");
 const { MAX_MESSAGE_LENGTH } = require("./constants");
 const log = require("./logger");
 
+// Retry helper cho Zalo API (rate limit / lỗi tạm)
+async function zaloRetry(fn, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fn();
+      // Zalo trả ok=false nhưng HTTP 200 — kiểm tra error code
+      if (!res.data.ok && res.data.error_code === -32) {
+        // -32 = rate limit từ Zalo
+        if (i < retries) {
+          const delay = (i + 1) * 1000; // 1s, 2s
+          log.warn(`⏳ Zalo rate limit — retry ${i + 1}/${retries} sau ${delay}ms`);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+      }
+      return res;
+    } catch (err) {
+      if (err.response?.status === 429 && i < retries) {
+        const delay = (i + 1) * 2000;
+        log.warn(`⏳ Zalo 429 — retry ${i + 1}/${retries} sau ${delay}ms`);
+        await new Promise((r) => setTimeout(r, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 // Chia tin nhắn dài thành nhiều phần
 function splitMessage(text, maxLen = MAX_MESSAGE_LENGTH) {
   if (text.length <= maxLen) return [text];
@@ -33,15 +61,17 @@ async function sendMessage(chatId, text) {
     const parts = splitMessage(text);
 
     for (let i = 0; i < parts.length; i++) {
-      const res = await axios.post(`${BOT_API}/sendMessage`, {
-        chat_id: chatId,
-        text: parts[i],
-      });
+      const res = await zaloRetry(() =>
+        axios.post(`${BOT_API}/sendMessage`, {
+          chat_id: chatId,
+          text: parts[i],
+        })
+      );
 
       if (res.data.ok) {
         log.info(`✅ Sent (${i + 1}/${parts.length}): "${parts[i].substring(0, 50)}..."`);
       } else {
-        log.error("sendMessage:", JSON.stringify(res.data));
+        log.error(`❌ sendMessage failed [${chatId}]:`, JSON.stringify(res.data, null, 2));
       }
 
       if (i < parts.length - 1) {
@@ -59,12 +89,14 @@ async function sendPhoto(chatId, photoUrl, caption = "") {
     const body = { chat_id: chatId, photo: photoUrl };
     if (caption) body.caption = caption;
 
-    const res = await axios.post(`${BOT_API}/sendPhoto`, body);
+    const res = await zaloRetry(() =>
+      axios.post(`${BOT_API}/sendPhoto`, body)
+    );
 
     if (res.data.ok) {
       log.info(`📷 Photo sent to ${chatId}`);
     } else {
-      log.error("sendPhoto:", JSON.stringify(res.data));
+      log.error(`❌ sendPhoto failed [${chatId}]:`, JSON.stringify(res.data, null, 2));
     }
     return res.data;
   } catch (err) {
