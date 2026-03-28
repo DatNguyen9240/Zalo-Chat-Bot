@@ -69,9 +69,15 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
     saveChatMessage(chatId, "Bot", "bot", welcomeMsg);
     sentWelcome = true;
     
-    // Nếu tin nhắn đầu tiên chỉ là lời chào, dừng lại ở đây để tránh Double Reply
+    // Nếu tin nhắn đầu tiên chỉ là lời chào, gửi thêm ảnh banner rồi dừng lại
     if (matchKeywords(text, getKeywords().greeting) && text.length < 15) {
-      log.debug(`👋 Greeting only in new session - stopping after welcome.`);
+      if (getPhotoUrl) {
+        const bannerUrl = getPhotoUrl("banner");
+        if (bannerUrl) {
+          await sendPhoto(chatId, bannerUrl, getPhotoCaptions().banner);
+        }
+      }
+      log.debug(`👋 Greeting only in new session - stopping after welcome & banner.`);
       return;
     }
   }
