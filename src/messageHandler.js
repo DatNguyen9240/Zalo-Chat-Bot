@@ -73,7 +73,8 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
     if (matchKeywords(text, getKeywords().greeting) && text.length < 15) {
       if (getPhotoUrl) {
         const bannerUrl = getPhotoUrl("banner");
-        if (bannerUrl) {
+        log.info(`🖼️ Banner URL: ${bannerUrl}`);
+        if (bannerUrl && bannerUrl.startsWith("http")) {
           await sendPhoto(chatId, bannerUrl, getPhotoCaptions().banner);
         }
       }
@@ -111,14 +112,20 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
   if (getPhotoUrl) {
     const captions = getPhotoCaptions();
     const keywords = getKeywords();
-    if (matchKeywords(text, keywords.greeting)) {
-      await sendPhoto(chatId, getPhotoUrl("banner"), captions.banner);
-    } else if (matchKeywords(text, keywords.price)) {
-      await sendPhoto(chatId, getPhotoUrl("product"), captions.product);
-    } else if (matchKeywords(text, keywords.promo)) {
-      await sendPhoto(chatId, getPhotoUrl("promo"), captions.promo);
-    } else if (matchKeywords(text, keywords.image)) {
-      await sendPhoto(chatId, getPhotoUrl("product"), captions.product);
+    let photoType = null;
+    if (matchKeywords(text, keywords.greeting)) photoType = "banner";
+    else if (matchKeywords(text, keywords.price)) photoType = "product";
+    else if (matchKeywords(text, keywords.promo)) photoType = "promo";
+    else if (matchKeywords(text, keywords.image)) photoType = "product";
+
+    if (photoType) {
+      const url = getPhotoUrl(photoType);
+      log.info(`🖼️ Photo URL [${photoType}]: ${url}`);
+      if (url && url.startsWith("http")) {
+        await sendPhoto(chatId, url, captions[photoType]);
+      } else {
+        log.warn(`⚠️ Không gửi ảnh vì URL không hợp lệ: ${url}`);
+      }
     }
   }
 
