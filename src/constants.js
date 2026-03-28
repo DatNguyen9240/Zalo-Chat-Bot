@@ -242,6 +242,14 @@ function getCacheEntries() {
         `📦 FREE SHIP đơn từ ${(settings.FREE_SHIP_THRESHOLD / 1000)}k\n\n` +
         "Nhắn \"đặt hàng\" để mình hỗ trợ bạn nhé!",
     },
+    {
+      keywords: ["chủ", "gặp chủ", "liên hệ", "sđt", "điện thoại", "gọi", "chu", "gap chu", "lien he", "sdt", "dien thoai", "goi"],
+      reply:
+        "📞 THÔNG TIN LIÊN HỆ CHỦ SHOP\n\n" +
+        "Bạn có thể liên hệ trực tiếp với chủ shop qua:\n" +
+        `👉 Zalo/SĐT: ${settings.OWNER_PHONE || "0975324568"}\n\n` +
+        "Chủ shop sẽ phản hồi bạn sớm nhất có thể ạ! 🍵",
+    },
   ];
 }
 
