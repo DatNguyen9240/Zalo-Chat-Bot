@@ -22,6 +22,27 @@ var DEFAULT_SHIPPING = [
   ["Miền Trung & Bắc", 30000, "3-5 ngày", "hà nội, đà nẵng, hải phòng"],
 ];
 
+var DEFAULT_SETTINGS = [
+  ["OWNER_PHONE", "0975324568"],
+  ["MAX_ORDER_QTY", 10],
+  ["FREE_SHIP_THRESHOLD", 300000],
+  ["DEFAULT_SHIP_SOUTH_FEE", 20000],
+  ["DEFAULT_SHIP_ALL_FEE", 30000],
+  ["IMAGE_BANNER", "https://placehold.co/600x400?text=Tra+Lai+Shop+Welcome"],
+  ["IMAGE_PRODUCT", "https://placehold.co/600x400?text=Menu+SanPham"],
+];
+
+var DEFAULT_KEYWORDS_SHEET = [
+  ["greeting", "chào, hello, hi, xin chào, alo, lô"],
+  ["price", "giá, bao nhiêu, bảng giá, gia, bao nhieu"],
+  ["promo", "khuyến mãi, giảm giá, ưu đãi, khuyen mai, giam gia"],
+];
+
+var DEFAULT_RESPONSES_SHEET = [
+  ["WELCOME", "Chào mừng bạn đến với Trà Lài Shop! Chúc bạn một ngày tốt lành nhé! 🍵"],
+  ["ORDER_SUCCESS", "Dạ shop đã nhận được đơn hàng của bạn rồi ạ! Cảm ơn bạn rất nhiều! 🙏"],
+];
+
 function doPost(e) {
   var lock = LockService.getScriptLock();
   try {
