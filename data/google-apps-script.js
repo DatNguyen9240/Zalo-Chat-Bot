@@ -108,9 +108,9 @@ function doPost(e) {
         settings: settings, 
         products: products, 
         shipping: shipping,
-        keywords: keywordsMap,
-        responses: responsesMap,
-        faqs: faqs
+        keywords: keywordsMap || {},
+        responses: responsesMap || {},
+        faqs: faqs || []
       });
     }
 

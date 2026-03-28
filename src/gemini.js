@@ -256,7 +256,8 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
       if (pendingOrderMessage) return pendingOrderMessage;
       return reply;
     } catch (err) {
-      log.error("Gemini error:", err.message);
+      log.error("❌ Gemini API Error Details:", err);
+      if (err.response) log.error("Response data:", JSON.stringify(err.response.data));
       return getReplies().error;
     }
   });

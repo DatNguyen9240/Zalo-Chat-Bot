@@ -106,8 +106,11 @@ function getDynamicKeywords() {
   const sheetKeywords = getKeywords();
   const result = { ...DEFAULT_KEYWORDS };
   for (const cat in sheetKeywords) {
-    if (sheetKeywords[cat] && sheetKeywords[cat].length > 0) {
-      result[cat] = sheetKeywords[cat];
+    if (Array.isArray(sheetKeywords[cat]) && sheetKeywords[cat].length > 0) {
+      // Gộp thêm từ khóa từ Sheet vào mặc định thay vì ghi đè hoàn toàn
+      const combined = [...(result[cat] || []), ...sheetKeywords[cat]];
+      // Loại bỏ trùng lặp
+      result[cat] = [...new Set(combined)];
     }
   }
   return result;
