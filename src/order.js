@@ -64,6 +64,13 @@ function confirmPendingOrder(chatId) {
   const pending = pendingOrders.get(chatId);
   if (!pending) return null;
 
+  // Guard chống double-confirm (race condition / duplicate webhook)
+  if (pending.confirming) {
+    log.warn(`⚠️ Double-confirm blocked for ${chatId}`);
+    return null;
+  }
+  pending.confirming = true;
+
   const { parsed, displayName } = pending;
   cancelPendingTimeout(chatId);
   pendingOrders.delete(chatId);

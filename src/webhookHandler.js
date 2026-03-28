@@ -3,6 +3,27 @@ const { PRODUCT_IMAGES } = require("./constants");
 const { handleTextMessage, handleImageMessage, handleStickerMessage } = require("./messageHandler");
 const log = require("./logger");
 
+// ============================================================
+// Webhook deduplication — tránh Zalo retry gửi 2 lần cùng event
+// ============================================================
+const processedMessages = new Map(); // msgId -> timestamp
+const DEDUP_TTL = 60 * 1000; // 60 giây
+
+function isDuplicate(msgId) {
+  if (!msgId) return false;
+  const now = Date.now();
+  // Dọn dẹp entries cũ
+  for (const [id, ts] of processedMessages) {
+    if (now - ts > DEDUP_TTL) processedMessages.delete(id);
+  }
+  if (processedMessages.has(msgId)) {
+    log.warn(`⚠️ Duplicate webhook skipped: ${msgId}`);
+    return true;
+  }
+  processedMessages.set(msgId, now);
+  return false;
+}
+
 // Lấy base URL từ request (ngrok URL)
 function getBaseUrl(req) {
   const proto = req.headers["x-forwarded-proto"] || req.protocol;
@@ -33,6 +54,10 @@ function setupWebhook(app) {
 
     // ✅ Trả 200 NGAY LẬP TỨC — Zalo không phải chờ bot xử lý xong
     res.sendStatus(200);
+
+    // Deduplication — bỏ qua nếu đã xử lý message này rồi
+    const msgId = message?.msg_id;
+    if (isDuplicate(msgId)) return;
 
     // Xử lý message bất đồng bộ (không block webhook response)
     const chatId = message?.chat?.id;
