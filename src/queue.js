@@ -1,7 +1,9 @@
 const log = require("./logger");
 
-// Simple request queue để tránh Gemini quá tải
-// Giới hạn số request đồng thời
+/**
+ * Request Queue để giới hạn số lượng request Gemini chạy đồng thời.
+ * Tránh lỗi 429 và quá tải server.
+ */
 const MAX_CONCURRENT = 3;
 let activeCount = 0;
 const queue = [];
@@ -9,7 +11,6 @@ const queue = [];
 function enqueue(fn) {
   return new Promise((resolve, reject) => {
     const task = async () => {
-      activeCount++;
       try {
         const result = await fn();
         resolve(result);
@@ -22,16 +23,18 @@ function enqueue(fn) {
     };
 
     if (activeCount < MAX_CONCURRENT) {
+      activeCount++; // Tăng ngay lập tức để tránh race condition
       task();
     } else {
-      log.debug(`📋 Queue: ${queue.length + 1} waiting (${activeCount} active)`);
+      log.debug(`📋 Queue: ${queue.length + 1} đang chờ (${activeCount} đang chạy)`);
       queue.push(task);
     }
   });
 }
 
 function processNext() {
-  if (queue.length > 0 && activeCount < MAX_CONCURRENT) {
+  while (queue.length > 0 && activeCount < MAX_CONCURRENT) {
+    activeCount++;
     const next = queue.shift();
     next();
   }

@@ -59,7 +59,7 @@ async function startPolling() {
       if (res.data.ok && res.data.result?.length > 0) {
         for (const update of res.data.result) {
           await handleUpdate(update);
-          if (update.update_id) {
+          if (update.update_id !== undefined) {
             lastUpdateId = update.update_id + 1;
           }
         }

@@ -10,6 +10,7 @@ const { setupWebhook } = require("./src/webhookHandler");
 const { startPolling, stopPolling } = require("./src/polling");
 const { getStats, getOrders, updateOrderStatus, closeDb } = require("./src/database");
 const { getQueueInfo } = require("./src/queue");
+const { fetchConfig } = require("./src/configManager");
 const log = require("./src/logger");
 
 // ============================================================
@@ -38,8 +39,9 @@ app.get("/", (req, res) => {
 // Admin Auth Middleware — BẢO VỆ /stats và /admin/*
 // ============================================================
 function requireAdmin(req, res, next) {
-  if (!ADMIN_SECRET) {
-    return res.status(503).json({ error: "ADMIN_SECRET chưa được cấu hình trong .env" });
+  if (!ADMIN_SECRET || ADMIN_SECRET.length < 8) {
+    log.error("❌ ADMIN_SECRET chưa được cấu hình hoặc quá ngắn (tối thiểu 8 ký tự)");
+    return res.status(503).json({ error: "Lỗi bảo mật server: ADMIN_SECRET không hợp lệ." });
   }
   const auth = req.headers["authorization"];
   if (!auth || auth !== `Bearer ${ADMIN_SECRET}`) {
@@ -58,6 +60,17 @@ app.get("/stats", requireAdmin, (req, res) => {
   stats.queue = getQueueInfo();
   stats.uptime = Math.floor(process.uptime()) + "s";
   res.json(stats);
+});
+
+// POST /admin/refresh — Tải lại cấu hình từ Sheet ngay lập tức
+app.post("/admin/refresh", requireAdmin, async (req, res) => {
+  try {
+    await fetchConfig();
+    log.info("🔄 Cấu hình đã được Admin làm mới thủ công.");
+    res.json({ ok: true, message: "Cấu hình đã được cập nhật từ Google Sheet." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ============================================================
@@ -146,6 +159,18 @@ app.patch("/admin/orders/:id", requireAdmin, (req, res) => {
 
 
 const server = app.listen(PORT, async () => {
+  // ── Khởi tạo cấu hình từ Google Sheet ──
+  await fetchConfig(true);
+  
+  // Tự động tải lại cấu hình mỗi 10 phút
+  setInterval(async () => {
+    try {
+      await fetchConfig();
+    } catch (err) {
+      log.error("❌ Lỗi khi tự động cập nhật cấu hình:", err.message);
+    }
+  }, 10 * 60 * 1000);
+
   console.log(`
 ╔══════════════════════════════════════════════╗
 ║       🤖 Zalo Bot is running!                ║

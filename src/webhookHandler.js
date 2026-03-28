@@ -12,10 +12,7 @@ const DEDUP_TTL = 60 * 1000; // 60 giây
 function isDuplicate(msgId) {
   if (!msgId) return false;
   const now = Date.now();
-  // Dọn dẹp entries cũ
-  for (const [id, ts] of processedMessages) {
-    if (now - ts > DEDUP_TTL) processedMessages.delete(id);
-  }
+  // Logic dọn dẹp đã được chuyển sang setInterval định kỳ
   if (processedMessages.has(msgId)) {
     log.warn(`⚠️ Duplicate webhook skipped: ${msgId}`);
     return true;
@@ -23,6 +20,14 @@ function isDuplicate(msgId) {
   processedMessages.set(msgId, now);
   return false;
 }
+
+// Cleanup định kỳ mỗi 5 phút (thay vì lặp trên mỗi request)
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, ts] of processedMessages) {
+    if (now - ts > DEDUP_TTL) processedMessages.delete(id);
+  }
+}, 5 * 60 * 1000);
 
 // Lấy base URL từ request (ngrok URL)
 function getBaseUrl(req) {
@@ -91,6 +96,27 @@ async function processWebhookEvent(event_name, message, chatId, from, req) {
     case "message.sticker.received":
       await handleStickerMessage(chatId, message);
       break;
+
+    case "oa.follow": {
+      const followerId = data?.follower?.id || chatId;
+      if (followerId) {
+        log.info(`👥 New follower: ${followerId}`);
+        trackEvent("oa_follow", followerId);
+        const baseUrl = getBaseUrl(req);
+        const getPhotoUrl = (type) => baseUrl + PRODUCT_IMAGES[type];
+        await handleFollowEvent(followerId, getPhotoUrl);
+      }
+      break;
+    }
+
+    case "oa.unfollow": {
+      const followerId = data?.follower?.id || chatId;
+      if (followerId) {
+        log.info(`👋 Lost follower: ${followerId}`);
+        trackEvent("oa_unfollow", followerId);
+      }
+      break;
+    }
 
     case "message.unsupported.received":
       // Không reply — tránh gửi tin nhắn thừa

@@ -1,7 +1,7 @@
 const axios = require("axios");
 const { GOOGLE_SHEET_URL } = require("./config");
-const { PRODUCTS, calculateShipping } = require("./constants");
-const { saveOrder, trackEvent } = require("./database");
+const { getProducts, calculateShipping, getSettings } = require("./constants");
+const { saveOrder, updateOrderStatus, trackEvent } = require("./database");
 const log = require("./logger");
 
 // ============================================================
@@ -12,15 +12,20 @@ const pendingOrders = new Map(); // chatId -> { parsed, displayName, createdAt, 
 const PENDING_TIMEOUT = 5 * 60 * 1000; // 5 phút
 
 function createPendingOrder(chatId, displayName, parsed) {
-  // Xóa pending cũ nếu có
   cancelPendingTimeout(chatId);
 
-  const totalProductPrice = parsed.product.price * parsed.quantity;
+  const unitPrice = Math.round(parsed.product.price || 0);
+  const qty = Math.round(parsed.quantity || 1);
+  const totalProductPrice = unitPrice * qty;
   const shipping = calculateShipping(parsed.address, totalProductPrice);
-  const totalPrice = totalProductPrice + shipping.fee;
+  const totalPrice = totalProductPrice + Math.round(shipping.fee || 0);
+  
+  if (isNaN(totalPrice)) {
+    log.error(`❌ NaN Price error for ${chatId}: p=${parsed.product.price}, q=${parsed.quantity}, s=${shipping.fee}`);
+    return "❌ Xin lỗi, hệ thống tính toán gặp sự cố nhỏ. Vui lòng liên hệ chủ shop để đặt hàng nhé! 🙏";
+  }
   const priceStr = totalPrice.toLocaleString("vi-VN") + "đ";
 
-  // Lưu vào pending
   const timer = setTimeout(() => {
     pendingOrders.delete(chatId);
     log.debug(`⏰ Pending order expired: ${chatId}`);
@@ -31,7 +36,6 @@ function createPendingOrder(chatId, displayName, parsed) {
   const unitPriceStr = parsed.product.price.toLocaleString("vi-VN") + "đ";
   const productTotalStr = totalProductPrice.toLocaleString("vi-VN") + "đ";
 
-  // Shipping line
   let shipLine;
   if (shipping.fee === 0 && shipping.originalFee === 0) {
     shipLine = `Phí ship: MIỄN PHÍ (${shipping.zone})`;
@@ -41,7 +45,6 @@ function createPendingOrder(chatId, displayName, parsed) {
     shipLine = `Phí ship: ${shipping.fee.toLocaleString("vi-VN")}đ (${shipping.zone}, ${shipping.time})`;
   }
 
-  // Trả về message preview (plain text, không buttons)
   return (
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `    🛒  XÁC NHẬN ĐƠN HÀNG\n` +
@@ -60,11 +63,10 @@ function createPendingOrder(chatId, displayName, parsed) {
   );
 }
 
-function confirmPendingOrder(chatId) {
+async function confirmPendingOrder(chatId) {
   const pending = pendingOrders.get(chatId);
   if (!pending) return null;
 
-  // Guard chống double-confirm (race condition / duplicate webhook)
   if (pending.confirming) {
     log.warn(`⚠️ Double-confirm blocked for ${chatId}`);
     return null;
@@ -75,9 +77,7 @@ function confirmPendingOrder(chatId) {
   cancelPendingTimeout(chatId);
   pendingOrders.delete(chatId);
 
-  // Tạo đơn thật
-  const result = createOrderFromParsed(chatId, displayName, parsed);
-  return result;
+  return await createOrderFromParsed(chatId, displayName, parsed);
 }
 
 function cancelPendingOrder(chatId) {
@@ -96,21 +96,18 @@ function hasPendingOrder(chatId) {
 
 function cancelPendingTimeout(chatId) {
   const pending = pendingOrders.get(chatId);
-  if (pending && pending.timer) {
-    clearTimeout(pending.timer);
-  }
+  if (pending && pending.timer) clearTimeout(pending.timer);
 }
 
 // ============================================================
-// Parse đơn hàng từ text — KHÔNG CẦN GEMINI
-// Trả về { product, quantity, customerName, phone, address } hoặc null
+// Parse đơn hàng từ text
 // ============================================================
 function tryParseOrder(text) {
   const lower = text.toLowerCase();
+  const products = getProducts();
 
-  // 1) Detect sản phẩm
   let product = null;
-  for (const p of PRODUCTS) {
+  for (const p of products) {
     if (p.aliases.some((a) => lower.includes(a))) {
       product = p;
       break;
@@ -118,57 +115,65 @@ function tryParseOrder(text) {
   }
   if (!product) return null;
 
-  // 2) Detect SĐT (bắt buộc)
-  const phoneMatch = text.match(/(0\d{8,10})/);
+  // 2) Detect SĐT (+84, 84 hoặc 0...)
+  const phoneMatch = text.match(/((?:\+84|84|0)\d{9,10})/);
   if (!phoneMatch) return null;
   const phone = phoneMatch[1];
 
-  // 3) Detect số lượng (mặc định 1)
-  const qtyMatch = lower.match(/(\d+)\s*(gói|hộp|bịch|cái)/);
-  const quantity = qtyMatch ? parseInt(qtyMatch[1]) : 1;
-  if (quantity < 1 || quantity > 99) return null;
+  let qtyMatch = lower.match(/(\d+)\s*(gói|hộp|bịch|cái|lon|hũ)/);
+  let quantity = 1;
 
-  // 4) Tách tên + địa chỉ từ phần còn lại
-  // Loại bỏ phần product alias + phone + quantity khỏi text
-  let remaining = text;
-  // Bỏ SĐT
-  remaining = remaining.replace(phoneMatch[0], "");
-  // Bỏ product aliases
-  for (const a of product.aliases) {
-    remaining = remaining.replace(new RegExp(a, "gi"), "");
+  if (qtyMatch) {
+    quantity = parseInt(qtyMatch[1]);
+  } else {
+    const phoneIdx = lower.indexOf(phone);
+    const textBeforePhone = phoneIdx !== -1 ? lower.substring(0, phoneIdx) : lower;
+    const independentQtyMatch = textBeforePhone.match(/\b(\d{1,2})\b/g);
+    
+    if (independentQtyMatch) {
+      for (let i = independentQtyMatch.length - 1; i >= 0; i--) {
+        const val = parseInt(independentQtyMatch[i]);
+        if (val >= 1 && val <= 50) {
+          quantity = val;
+          break;
+        }
+      }
+    }
   }
-  // Bỏ "trà", "trà lài"
-  remaining = remaining.replace(/trà\s*lài?/gi, "");
-  // Bỏ quantity pattern
-  if (qtyMatch) remaining = remaining.replace(qtyMatch[0], "");
-  // Bỏ keywords thừa
-  remaining = remaining.replace(/đặt\s*hàng|đặt\s*mua|mua|đặt|order/gi, "");
 
-  // Split bằng dấu , hoặc |
+  if (quantity < 1 || quantity > 99) quantity = 1;
+
+  let remaining = text;
+  remaining = remaining.replace(phoneMatch[0], "");
+  for (const a of product.aliases) {
+    // Thoát ký tự đặc biệt trong alias trước khi tạo RegExp
+    const escaped = a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    remaining = remaining.replace(new RegExp(escaped, "gi"), "");
+  }
+  remaining = remaining.replace(/trà\s*lài?/gi, "").replace(/đặt|mua|order/gi, "");
+  if (qtyMatch) remaining = remaining.replace(qtyMatch[0], "");
+
   let parts = remaining.split(/[,|]/).map((s) => s.trim()).filter((s) => s.length >= 2);
 
   if (parts.length >= 2) {
-    // Có ít nhất tên + địa chỉ
-    const customerName = parts[0];
-    const address = parts.slice(1).join(", ");
-    return { product, quantity, customerName, phone, address };
+    return { product, quantity, customerName: parts[0], phone, address: parts.slice(1).join(", ") };
   }
 
-  // Thử detect bằng vị trí SĐT: text trước = tên, text sau = địa chỉ
   const phoneIdx = text.indexOf(phone);
   const beforePhone = text.substring(0, phoneIdx).replace(/[,|]/g, "").trim();
   const afterPhone = text.substring(phoneIdx + phone.length).replace(/[,|]/g, "").trim();
 
-  // Xử lý: loại bỏ product/qty keywords từ beforePhone
   let cleanBefore = beforePhone;
   for (const a of product.aliases) {
-    cleanBefore = cleanBefore.replace(new RegExp(a, "gi"), "");
+    const escaped = a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    cleanBefore = cleanBefore.replace(new RegExp(escaped, "gi"), "");
   }
   cleanBefore = cleanBefore.replace(/trà\s*lài?/gi, "").replace(/\d+\s*(gói|hộp)/gi, "").replace(/đặt|mua|order/gi, "").trim();
 
   let cleanAfter = afterPhone;
   for (const a of product.aliases) {
-    cleanAfter = cleanAfter.replace(new RegExp(a, "gi"), "");
+    const escaped = a.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    cleanAfter = cleanAfter.replace(new RegExp(escaped, "gi"), "");
   }
   cleanAfter = cleanAfter.replace(/trà\s*lài?/gi, "").replace(/\d+\s*(gói|hộp)/gi, "").replace(/đặt|mua|order/gi, "").trim();
 
@@ -180,13 +185,34 @@ function tryParseOrder(text) {
 }
 
 // ============================================================
-// Tạo đơn hàng — gọi khi parse thành công
+// Tạo đơn hàng chính thức
 // ============================================================
-function createOrderFromParsed(chatId, displayName, parsed) {
+async function createOrderFromParsed(chatId, displayName, parsed) {
   const totalProductPrice = parsed.product.price * parsed.quantity;
   const shipping = calculateShipping(parsed.address, totalProductPrice);
   const totalPrice = totalProductPrice + shipping.fee;
+  const settings = getSettings();
 
+  // 1) Check tồn kho
+  const checkResult = await sendToGoogleSheet({
+    action: "check_stock",
+    product: parsed.product.name,
+    quantity: parsed.quantity
+  });
+
+  if (checkResult && !checkResult.ok) {
+    const ownerPhone = checkResult.ownerPhone || settings.OWNER_PHONE || "0975324568";
+    if (checkResult.error === "het_hang") {
+      const available = checkResult.available ?? 0;
+      return `❌ Hết hàng!\n\nXin lỗi, ${parsed.product.name} hiện chỉ còn ${available} gói.\nBạn muốn đặt ${available} gói không? Nhắn lại mình nhé!\n\n💬 Liên hệ chủ shop: Zalo ${ownerPhone} 🙏`;
+    }
+    if (checkResult.error === "so_luong_khong_hop_le") {
+      const maxQty = checkResult.maxQty || settings.MAX_ORDER_QTY || 10;
+      return `⚠️ Số lượng vượt giới hạn!\nMỗi đơn tối đa ${maxQty} gói.\nNếu bạn cần mua số lượng nhiều hơn, vui lòng liên hệ chủ shop: Zalo ${ownerPhone} 🙏`;
+    }
+  }
+
+  // 2) Lưu SQLite (Hàng đợi nội bộ)
   const orderId = saveOrder({
     chatId,
     displayName,
@@ -198,7 +224,9 @@ function createOrderFromParsed(chatId, displayName, parsed) {
     address: parsed.address,
   });
 
-  sendToGoogleSheet({
+  // 3) Ghi đơn vào Sheet (Đồng bộ)
+  const confirmResult = await sendToGoogleSheet({
+    action: "confirm",
     orderId,
     displayName,
     product: parsed.product.name,
@@ -211,20 +239,17 @@ function createOrderFromParsed(chatId, displayName, parsed) {
     shippingFee: shipping.fee,
   });
 
+  if (!confirmResult || !confirmResult.ok) {
+    log.error(`⚠️ Đồng bộ đơn hàng #${orderId} thất bại!`);
+    updateOrderStatus(orderId, "error_sheet");
+    return `⚠️ CẢNH BÁO: Đã có lỗi kỹ thuật khi đồng bộ đơn hàng #${orderId} lên Google Sheet.\n\nTuy nhiên, Bot đã ghi nhận thông tin thành công. Chủ shop sẽ kiểm tra và xác nhận sớm nhất qua SĐT ${parsed.phone} của bạn nhé! 🙏`;
+  }
+
   trackEvent("order_created", chatId);
 
   const priceStr = totalPrice.toLocaleString("vi-VN") + "đ";
   const productTotalStr = totalProductPrice.toLocaleString("vi-VN") + "đ";
-
-  // Shipping line
-  let shipLine;
-  if (shipping.fee === 0 && shipping.originalFee === 0) {
-    shipLine = `Phí ship: MIỄN PHÍ (${shipping.zone})`;
-  } else if (shipping.freeShip) {
-    shipLine = `Phí ship: MIỄN PHÍ 🎁 (${shipping.zone})`;
-  } else {
-    shipLine = `Phí ship: ${shipping.fee.toLocaleString("vi-VN")}đ (${shipping.zone}, ${shipping.time})`;
-  }
+  let shipLine = shipping.fee === 0 ? `Phí ship: MIỄN PHÍ (${shipping.zone})` : `Phí ship: ${shipping.fee.toLocaleString("vi-VN")}đ (${shipping.zone})`;
 
   return (
     `━━━━━━━━━━━━━━━━━━━━\n` +
@@ -242,20 +267,14 @@ function createOrderFromParsed(chatId, displayName, parsed) {
   );
 }
 
-// ============================================================
-// Google Sheets
-// ============================================================
 async function sendToGoogleSheet(order) {
-  if (!GOOGLE_SHEET_URL) {
-    log.debug("Google Sheet URL chưa cấu hình — bỏ qua");
-    return;
-  }
-
+  if (!GOOGLE_SHEET_URL) return null;
   try {
-    await axios.post(GOOGLE_SHEET_URL, order, { timeout: 10000 });
-    log.info(`📊 Google Sheet updated: Order #${order.orderId}`);
+    const res = await axios.post(GOOGLE_SHEET_URL, order, { timeout: 10000 });
+    return res.data;
   } catch (err) {
     log.error("Google Sheet error:", err.message);
+    return null;
   }
 }
 
@@ -268,4 +287,3 @@ module.exports = {
   hasPendingOrder,
   sendToGoogleSheet,
 };
-

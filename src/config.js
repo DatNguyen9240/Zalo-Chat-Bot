@@ -25,7 +25,7 @@ module.exports = {
   BOT_TOKEN,
   BOT_MODE: BOT_MODE || "webhook", // "webhook" | "polling"
   GEMINI_API_KEY,
-  GEMINI_MODEL: GEMINI_MODEL || "gemini-2.5-flash",
+  GEMINI_MODEL: GEMINI_MODEL || "gemini-1.5-flash",
   WEBHOOK_SECRET,
   WEBHOOK_URL, // Public URL cho webhook (VD: https://your-app.up.railway.app/webhook)
   ADMIN_SECRET,

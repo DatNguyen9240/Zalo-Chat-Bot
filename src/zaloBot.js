@@ -9,14 +9,19 @@ async function zaloRetry(fn, retries = 2) {
     try {
       const res = await fn();
       // Zalo trả ok=false nhưng HTTP 200 — kiểm tra error code
-      if (!res.data.ok && res.data.error_code === -32) {
-        // -32 = rate limit từ Zalo
-        if (i < retries) {
-          const delay = (i + 1) * 1000; // 1s, 2s
-          log.warn(`⏳ Zalo rate limit — retry ${i + 1}/${retries} sau ${delay}ms`);
-          await new Promise((r) => setTimeout(r, delay));
-          continue;
+      if (!res.data.ok) {
+        const ec = res.data.error_code;
+        // -32 = rate limit, -1 = system error
+        if (ec === -32 || ec === -1) {
+          if (i < retries) {
+            const delay = (i + 1) * 2000;
+            log.warn(`⏳ Zalo error ${ec} — retry ${i + 1}/${retries} sau ${delay}ms`);
+            await new Promise((r) => setTimeout(r, delay));
+            continue;
+          }
         }
+        // Các mã lỗi vĩnh viễn (như 111: chưa quan tâm OA) thì không retry
+        return res;
       }
       return res;
     } catch (err) {
@@ -106,15 +111,17 @@ async function sendPhoto(chatId, photoUrl, caption = "") {
 
 async function sendSticker(chatId, stickerId) {
   try {
-    const res = await axios.post(`${BOT_API}/sendSticker`, {
-      chat_id: chatId,
-      sticker: stickerId,
-    });
+    const res = await zaloRetry(() =>
+      axios.post(`${BOT_API}/sendSticker`, {
+        chat_id: chatId,
+        sticker: stickerId,
+      })
+    );
 
     if (res.data.ok) {
       log.info(`🎭 Sticker sent to ${chatId}`);
     } else {
-      log.error("sendSticker:", JSON.stringify(res.data));
+      log.error("sendSticker failed:", JSON.stringify(res.data));
     }
     return res.data;
   } catch (err) {
