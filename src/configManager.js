@@ -10,7 +10,10 @@ let dynamicConfig = {
     FREE_SHIP_THRESHOLD: 300000
   },
   products: [],
-  shipping: []
+  shipping: [],
+  keywords: {},
+  responses: {},
+  faqs: []
 };
 
 // Cấu hình mặc định nếu Sheet lỗi
@@ -53,6 +56,18 @@ async function fetchConfig(isStartup = false) {
           dynamicConfig.shipping = res.data.shipping;
         }
 
+        if (res.data.keywords) {
+          dynamicConfig.keywords = res.data.keywords;
+        }
+
+        if (res.data.responses) {
+          dynamicConfig.responses = res.data.responses;
+        }
+
+        if (res.data.faqs) {
+          dynamicConfig.faqs = res.data.faqs;
+        }
+
         return dynamicConfig;
       }
     } catch (err) {
@@ -69,11 +84,17 @@ function getConfig() { return dynamicConfig; }
 function getProducts() { return dynamicConfig.products; }
 function getSettings() { return dynamicConfig.settings; }
 function getShippingZones() { return dynamicConfig.shipping; }
+function getKeywords() { return dynamicConfig.keywords; }
+function getResponses() { return dynamicConfig.responses; }
+function getFaqs() { return dynamicConfig.faqs; }
 
 module.exports = {
   fetchConfig,
   getConfig,
   getProducts,
   getSettings,
-  getShippingZones
+  getShippingZones,
+  getKeywords,
+  getResponses,
+  getFaqs
 };

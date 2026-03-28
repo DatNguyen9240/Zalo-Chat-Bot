@@ -1,4 +1,4 @@
-const { KEYWORDS, getPhotoCaptions, REPLIES, getWelcomeMessage, ORDER_KEYWORDS, ORDER_REPLIES, getProducts, matchKeywords, getCacheEntries } = require("./constants");
+const { getKeywords, getPhotoCaptions, getReplies, getWelcomeMessage, getOrderKeywords, getOrderReplies, getProducts, matchKeywords, getCacheEntries } = require("./constants");
 const { generateReply, hasActiveSession } = require("./gemini");
 const { getCachedReply } = require("./cache");
 const { tryParseOrder, createPendingOrder, confirmPendingOrder, cancelPendingOrder, hasPendingOrder } = require("./order");
@@ -56,7 +56,8 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
   saveChatMessage(chatId, from.display_name, "user", text);
 
   if (isRateLimited(chatId)) {
-    await sendMessage(chatId, REPLIES.rateLimited);
+    const replies = getReplies();
+    await sendMessage(chatId, replies.rateLimited);
     return;
   }
 
@@ -69,7 +70,7 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
     sentWelcome = true;
     
     // Nếu tin nhắn đầu tiên chỉ là lời chào, dừng lại ở đây để tránh Double Reply
-    if (matchKeywords(text, KEYWORDS.greeting) && text.length < 15) {
+    if (matchKeywords(text, getKeywords().greeting) && text.length < 15) {
       log.debug(`👋 Greeting only in new session - stopping after welcome.`);
       return;
     }
@@ -111,13 +112,14 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
   // 6) Gửi ảnh sản phẩm theo từ khóa (có thể gửi kèm sau reply)
   if (getPhotoUrl) {
     const captions = getPhotoCaptions();
-    if (matchKeywords(text, KEYWORDS.greeting)) {
+    const keywords = getKeywords();
+    if (matchKeywords(text, keywords.greeting)) {
       await sendPhoto(chatId, getPhotoUrl("banner"), captions.banner);
-    } else if (matchKeywords(text, KEYWORDS.price)) {
+    } else if (matchKeywords(text, keywords.price)) {
       await sendPhoto(chatId, getPhotoUrl("product"), captions.product);
-    } else if (matchKeywords(text, KEYWORDS.promo)) {
+    } else if (matchKeywords(text, keywords.promo)) {
       await sendPhoto(chatId, getPhotoUrl("promo"), captions.promo);
-    } else if (matchKeywords(text, KEYWORDS.image)) {
+    } else if (matchKeywords(text, keywords.image)) {
       await sendPhoto(chatId, getPhotoUrl("product"), captions.product);
     }
   }
@@ -136,25 +138,28 @@ async function handleFollowEvent(chatId, getPhotoUrl) {
 
 async function handlePendingOrder(chatId, text) {
   const lower = text.toLowerCase().trim();
-  if (ORDER_KEYWORDS.confirm.some(k => lower.includes(k))) {
+  const orderKeywords = getOrderKeywords();
+  const orderReplies = getOrderReplies();
+
+  if (orderKeywords.confirm.some(k => lower.includes(k))) {
     if (!isOrderConfirmCooledDown(chatId)) return;
     const confirmReply = await confirmPendingOrder(chatId);
     if (confirmReply) {
       await sendMessage(chatId, confirmReply);
       saveChatMessage(chatId, "Bot", "bot", confirmReply);
     }
-  } else if (ORDER_KEYWORDS.cancel.some(k => lower.includes(k))) {
+  } else if (orderKeywords.cancel.some(k => lower.includes(k))) {
     const cancelReply = cancelPendingOrder(chatId);
     if (cancelReply) {
       await sendMessage(chatId, cancelReply);
       saveChatMessage(chatId, "Bot", "bot", cancelReply);
     }
-  } else if (ORDER_KEYWORDS.edit.some(k => lower.includes(k))) {
+  } else if (orderKeywords.edit.some(k => lower.includes(k))) {
     cancelPendingOrder(chatId);
-    await sendMessage(chatId, ORDER_REPLIES.editPrompt);
-    saveChatMessage(chatId, "Bot", "bot", ORDER_REPLIES.editPrompt);
+    await sendMessage(chatId, orderReplies.editPrompt);
+    saveChatMessage(chatId, "Bot", "bot", orderReplies.editPrompt);
   } else {
-    await sendMessage(chatId, ORDER_REPLIES.reminder);
+    await sendMessage(chatId, orderReplies.reminder);
   }
 }
 
@@ -162,7 +167,7 @@ async function handleImageMessage(chatId) {
   const previousTask = chatLocks.get(chatId) || Promise.resolve();
   const currentTask = previousTask.then(async () => {
     trackEvent("image_received", chatId);
-    if (chatId) await sendMessage(chatId, REPLIES.image);
+    if (chatId) await sendMessage(chatId, getReplies().image);
   });
   chatLocks.set(chatId, currentTask);
   currentTask.finally(() => { if (chatLocks.get(chatId) === currentTask) chatLocks.delete(chatId); });
@@ -174,8 +179,9 @@ async function handleStickerMessage(chatId, message) {
     trackEvent("sticker_received", chatId);
     const stickerId = message?.sticker;
     if (chatId) {
+       const replies = getReplies();
        if (stickerId) await sendSticker(chatId, stickerId);
-       else await sendMessage(chatId, REPLIES.sticker);
+       else await sendMessage(chatId, replies.sticker);
     }
   });
   chatLocks.set(chatId, currentTask);

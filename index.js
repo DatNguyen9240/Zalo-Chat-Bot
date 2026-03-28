@@ -28,10 +28,11 @@ setupWebhook(app);
 // Health check (public — không lộ thông tin nhạy cảm)
 app.get("/", (req, res) => {
   res.json({
-    status: "running",
-    bot: "Zalo Bot 🤖",
+    status: "online 🚀",
+    bot: "Nhất Lài Shop - Zalo AI Bot 🤖",
     mode: BOT_MODE,
     uptime: Math.floor(process.uptime()) + "s",
+    message: "Hệ thống đang hoạt động ổn định. Chúc bạn một ngày tốt lành! ✨",
   });
 });
 
@@ -221,5 +222,14 @@ function gracefulShutdown(signal) {
 
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
+process.on("unhandledRejection", (reason) => {
+  log.error("💥 Unhandled Rejection at:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  log.error("💥 Uncaught Exception:", err);
+  // Optional: Graceful shutdown if needed, but for bot it's better to keep running if possible
+});
 
 module.exports = { app, registerWebhook };

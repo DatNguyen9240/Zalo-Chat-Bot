@@ -121,7 +121,11 @@ function trackEvent(eventType, chatId = null) {
 }
 
 function getStats() {
-  const today = new Date().toISOString().split("T")[0];
+  // Lấy ngày hiện tại theo múi giờ Việt Nam (ISO YYYY-MM-DD)
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const vnTime = new Date(utc + (3600000 * 7));
+  const today = vnTime.toISOString().split("T")[0];
 
   const totalMessages = db
     .prepare("SELECT COUNT(*) as count FROM stats WHERE event_type = 'message'")

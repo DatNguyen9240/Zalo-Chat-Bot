@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY, GEMINI_MODEL } = require("./config");
-const { getSystemPrompt, SESSION_TTL, REPLIES, getProducts, getShippingZones, getSettings } = require("./constants");
+const { getSystemPrompt, SESSION_TTL, getReplies, getProducts, getShippingZones, getSettings } = require("./constants");
 const { enqueue } = require("./queue");
 const { createPendingOrder } = require("./order");
 const { trackEvent } = require("./database");
@@ -197,8 +197,8 @@ function handleFunctionCall(functionCall, chatId, displayName) {
         pending: true,
         message: orderMessage,
         product: product.name,
-        quantity: args.quantity,
-        totalPrice: product.price * args.quantity,
+        quantity: Number(args.quantity),
+        totalPrice: product.price * Number(args.quantity),
       },
     };
   }
@@ -257,7 +257,7 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
       return reply;
     } catch (err) {
       log.error("Gemini error:", err.message);
-      return REPLIES.error;
+      return getReplies().error;
     }
   });
 }

@@ -27,6 +27,7 @@ function doPost(e) {
   try {
     lock.waitLock(30000);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!e || !e.postData || !e.postData.contents) return jsonResponse({ ok: false, error: "no_data" });
     var data = JSON.parse(e.postData.contents);
 
     var settings = getSettings(ss);
@@ -65,7 +66,52 @@ function doPost(e) {
         }
       }
 
-      return jsonResponse({ ok: true, settings: settings, products: products, shipping: shipping });
+      // [NEW] Get Keywords
+      var kwSheet = getOrCreateKeywordSheet(ss);
+      var kwData = kwSheet.getDataRange().getValues();
+      var kwHeaders = getHeaderIndices(kwData[0]);
+      var keywordsMap = {};
+      for (var k = 1; k < kwData.length; k++) {
+        var cat = kwData[k][kwHeaders["Danh mục"]];
+        if (cat) {
+          keywordsMap[cat] = String(kwData[k][kwHeaders["Từ khóa"]] || "").split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+        }
+      }
+
+      // [NEW] Get Responses
+      var respSheet = getOrCreateResponseSheet(ss);
+      var respData = respSheet.getDataRange().getValues();
+      var respHeaders = getHeaderIndices(respData[0]);
+      var responsesMap = {};
+      for (var l = 1; l < respData.length; l++) {
+        var key = respData[l][respHeaders["Mã phản hồi"]];
+        if (key) responsesMap[key] = respData[l][respHeaders["Nội dung"]];
+      }
+
+      // [NEW] Get FAQ
+      var faqSheet = getOrCreateFAQSheet(ss);
+      var faqData = faqSheet.getDataRange().getValues();
+      var faqHeaders = getHeaderIndices(faqData[0]);
+      var faqs = [];
+      for (var m = 1; m < faqData.length; m++) {
+        var faqq = faqData[m][faqHeaders["Câu hỏi"]];
+        if (faqq) {
+          faqs.push({
+            keywords: String(faqq).split(",").map(function(s) { return s.trim(); }).filter(Boolean),
+            reply: faqData[m][faqHeaders["Câu trả lời"]]
+          });
+        }
+      }
+
+      return jsonResponse({ 
+        ok: true, 
+        settings: settings, 
+        products: products, 
+        shipping: shipping,
+        keywords: keywordsMap,
+        responses: responsesMap,
+        faqs: faqs
+      });
     }
 
     // ── Tinh toán ──
@@ -219,6 +265,51 @@ function getOrCreateShippingSheet(ss) {
   return sheet;
 }
 
+function getOrCreateKeywordSheet(ss) {
+  var name = "Từ khóa";
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(["Danh mục", "Từ khóa"]);
+    sheet.getRange(1, 1, 1, 2).setFontWeight("bold");
+    sheet.appendRow(["greeting", "chào, hi, hello, xin chào, alo"]);
+    sheet.appendRow(["price", "giá, bao nhiêu, bảng giá, price"]);
+    sheet.appendRow(["promo", "khuyến mãi, giảm giá, ưu đãi, sale, free ship"]);
+    sheet.appendRow(["image", "hình, ảnh, xem sản phẩm, cho xem"]);
+  }
+  return sheet;
+}
+
+function getOrCreateResponseSheet(ss) {
+  var name = "Phản hồi";
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(["Mã phản hồi", "Nội dung"]);
+    sheet.getRange(1, 1, 1, 2).setFontWeight("bold");
+    sheet.appendRow(["REPLY_IMAGE", "Tôi đã nhận được hình ảnh! Hiện tại tôi chỉ hỗ trợ tin nhắn text. 😊"]);
+    sheet.appendRow(["REPLY_STICKER", "😄"]);
+    sheet.appendRow(["REPLY_ERROR", "Xin lỗi, tôi đang gặp sự cố. Vui lòng thử lại sau! 🙏"]);
+    sheet.appendRow(["ORDER_REMINDER", "Bạn đang có đơn hàng chờ xác nhận. Vui lòng trả lời OK, Hủy hoặc Sửa."]);
+  }
+  return sheet;
+}
+
+function getOrCreateFAQSheet(ss) {
+  var name = "FAQ";
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    sheet.appendRow(["Câu hỏi", "Câu trả lời"]);
+    sheet.getRange(1, 1, 1, 2).setFontWeight("bold");
+    sheet.appendRow(["chào, hello, hi", "Xin chào! Trà Lài Shop có thể hỗ trợ gì cho bạn ạ?"]);
+    sheet.appendRow(["đặt hàng, mua hàng", "Bạn vui lòng cho shop xin: Tên trà, Số lượng, Họ tên, SĐT và Địa chỉ nhé!"]);
+    sheet.appendRow(["giá, bao nhiêu", "Shop có các loại: 100g (50k), 250g (110k), 500g (200k). Miễn phí ship đơn từ 300k ạ!"]);
+    sheet.appendRow(["ship, giao hàng", "Phí ship: HCM 20k, tỉnh khác 30k. Giao nội thành trong ngày, tỉnh từ 2-4 ngày ạ."]);
+  }
+  return sheet;
+}
+
 function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -264,7 +355,7 @@ function updateCustomerSheet(ss, data, qty, nowStr) {
     var updates = {};
     updates[headers["Tổng đơn"]] = (parseInt(row[headers["Tổng đơn"]]) || 0) + 1;
     updates[headers["Tổng gói"]] = (parseInt(row[headers["Tổng gói"]]) || 0) + qty;
-    updates[headers["Tổng tiền (đ)"]] = (parseFloat(row[headers["Tổng tiền (đ)"]]) || 0) + data.totalPrice;
+    updates[headers["Tổng tiền (đ)"]] = (parseFloat(row[headers["Tổng tiền (đ)"]]) || 0) + (Number(data.totalPrice) || 0);
     updates[headers["Lần gần nhất"]] = nowStr;
 
     for (var colIdx in updates) {

@@ -1,19 +1,19 @@
 const axios = require("axios");
 const { BOT_API } = require("./config");
 const { PRODUCT_IMAGES_PLACEHOLDER } = require("./constants");
-const { handleTextMessage, handleImageMessage, handleStickerMessage } = require("./messageHandler");
+const { handleTextMessage, handleImageMessage, handleStickerMessage, handleFollowEvent } = require("./messageHandler");
 const log = require("./logger");
 
 // Xử lý 1 update event
 async function handleUpdate(update) {
-  const { event_name, message } = update;
+  const { event_name, message, follower, timestamp } = update;
 
   if (!event_name) return;
 
-  const chatId = message?.chat?.id;
-  const from = message?.from;
+  const chatId = message?.chat?.id || follower?.id;
+  const from = message?.from || follower;
 
-  log.info(`📩 [${event_name}] ${from?.display_name || "Unknown"}`);
+  log.info(`📩 [${event_name}] ${from?.display_name || chatId || "User"}`);
 
   switch (event_name) {
     case "message.text.received": {
@@ -31,6 +31,18 @@ async function handleUpdate(update) {
 
     case "message.sticker.received":
       await handleStickerMessage(chatId, message);
+      break;
+
+    case "oa.follow":
+      if (chatId) {
+        log.info(`👥 New follower: ${chatId}`);
+        const getPhotoUrl = (type) => PRODUCT_IMAGES_PLACEHOLDER[type];
+        await handleFollowEvent(chatId, getPhotoUrl);
+      }
+      break;
+
+    case "oa.unfollow":
+      if (chatId) log.info(`👋 Lost follower: ${chatId}`);
       break;
 
     case "message.unsupported.received":

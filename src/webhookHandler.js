@@ -1,5 +1,5 @@
 const { WEBHOOK_SECRET } = require("./config");
-const { PRODUCT_IMAGES } = require("./constants");
+const { getProductImages } = require("./constants");
 const { handleTextMessage, handleImageMessage, handleStickerMessage } = require("./messageHandler");
 const log = require("./logger");
 
@@ -51,39 +51,42 @@ function setupWebhook(app) {
 
     // Hỗ trợ cả 2 format webhook
     const data = body.result || body;
-    const { event_name, message } = data;
+    const { event_name } = data;
 
     if (!event_name) {
       return res.sendStatus(200);
     }
 
-    // ✅ Trả 200 NGAY LẬP TỨC — Zalo không phải chờ bot xử lý xong
+    // ✅ Trả 200 NGAY LẬP TỨC
     res.sendStatus(200);
 
-    // Deduplication — bỏ qua nếu đã xử lý message này rồi
-    const msgId = message?.msg_id;
+    // Deduplication
+    const msgId = data.message?.msg_id || data.msg_id || data.timestamp;
     if (isDuplicate(msgId)) return;
 
-    // Xử lý message bất đồng bộ (không block webhook response)
-    const chatId = message?.chat?.id;
-    const from = message?.from;
+    // Lấy thông tin cơ bản
+    const chatId = data.message?.chat?.id || data.follower?.id || data.user_id;
+    const from = data.message?.from || data.follower;
 
-    log.info(`📩 [${event_name}] ${from?.display_name || "Unknown"}`);
+    log.info(`📩 [${event_name}] ${from?.display_name || chatId || "User"}`);
 
-    processWebhookEvent(event_name, message, chatId, from, req).catch((err) => {
+    processWebhookEvent(event_name, data, chatId, from, req).catch((err) => {
       log.error(`Webhook processing error: ${err.message}`);
     });
   });
 }
 
 // Xử lý event bất đồng bộ — chạy sau khi đã trả 200
-async function processWebhookEvent(event_name, message, chatId, from, req) {
+async function processWebhookEvent(event_name, payload, chatId, from, req) {
   switch (event_name) {
     case "message.text.received": {
-      const text = message?.text;
+      const text = payload.message?.text;
       if (chatId && text && !from?.is_bot) {
         const baseUrl = getBaseUrl(req);
-        const getPhotoUrl = (type) => baseUrl + PRODUCT_IMAGES[type];
+        const getPhotoUrl = (type) => {
+          const img = getProductImages()[type];
+          return (img && img.startsWith("http")) ? img : baseUrl + img;
+        };
         await handleTextMessage(chatId, from, text, getPhotoUrl);
       }
       break;
@@ -94,23 +97,26 @@ async function processWebhookEvent(event_name, message, chatId, from, req) {
       break;
 
     case "message.sticker.received":
-      await handleStickerMessage(chatId, message);
+      await handleStickerMessage(chatId, payload.message);
       break;
 
     case "oa.follow": {
-      const followerId = data?.follower?.id || chatId;
+      const followerId = payload.follower?.id || chatId;
       if (followerId) {
         log.info(`👥 New follower: ${followerId}`);
         trackEvent("oa_follow", followerId);
         const baseUrl = getBaseUrl(req);
-        const getPhotoUrl = (type) => baseUrl + PRODUCT_IMAGES[type];
+        const getPhotoUrl = (type) => {
+          const img = getProductImages()[type];
+          return (img && img.startsWith("http")) ? img : baseUrl + img;
+        };
         await handleFollowEvent(followerId, getPhotoUrl);
       }
       break;
     }
 
     case "oa.unfollow": {
-      const followerId = data?.follower?.id || chatId;
+      const followerId = payload.follower?.id || chatId;
       if (followerId) {
         log.info(`👋 Lost follower: ${followerId}`);
         trackEvent("oa_unfollow", followerId);

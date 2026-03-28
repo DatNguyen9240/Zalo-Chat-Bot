@@ -25,9 +25,10 @@ async function zaloRetry(fn, retries = 2) {
       }
       return res;
     } catch (err) {
-      if (err.response?.status === 429 && i < retries) {
+      const isNetworkError = !err.response && (err.code === "ETIMEDOUT" || err.code === "ECONNABORTED" || err.code === "ECONNRESET" || err.code === "ENOTFOUND");
+      if ((err.response?.status === 429 || isNetworkError) && i < retries) {
         const delay = (i + 1) * 2000;
-        log.warn(`⏳ Zalo 429 — retry ${i + 1}/${retries} sau ${delay}ms`);
+        log.warn(`⏳ Zalo ${err.code || "429"} — retry ${i + 1}/${retries} sau ${delay}ms`);
         await new Promise((r) => setTimeout(r, delay));
       } else {
         throw err;
@@ -38,10 +39,11 @@ async function zaloRetry(fn, retries = 2) {
 
 // Chia tin nhắn dài thành nhiều phần
 function splitMessage(text, maxLen = MAX_MESSAGE_LENGTH) {
-  if (text.length <= maxLen) return [text];
+  if (!text || text.trim().length === 0) return [];
+  if (text.length <= maxLen) return [text.trim()];
 
   const parts = [];
-  let remaining = text;
+  let remaining = text.trim();
 
   while (remaining.length > 0) {
     if (remaining.length <= maxLen) {
@@ -58,19 +60,20 @@ function splitMessage(text, maxLen = MAX_MESSAGE_LENGTH) {
     remaining = remaining.substring(cutAt + 1).trim();
   }
 
-  return parts;
+  return parts.filter(p => p.length > 0);
 }
 
 async function sendMessage(chatId, text) {
   try {
     const parts = splitMessage(text);
+    if (parts.length === 0) return;
 
     for (let i = 0; i < parts.length; i++) {
       const res = await zaloRetry(() =>
         axios.post(`${BOT_API}/sendMessage`, {
           chat_id: chatId,
           text: parts[i],
-        })
+        }, { timeout: 10000 })
       );
 
       if (res.data.ok) {
@@ -95,7 +98,7 @@ async function sendPhoto(chatId, photoUrl, caption = "") {
     if (caption) body.caption = caption;
 
     const res = await zaloRetry(() =>
-      axios.post(`${BOT_API}/sendPhoto`, body)
+      axios.post(`${BOT_API}/sendPhoto`, body, { timeout: 15000 })
     );
 
     if (res.data.ok) {
@@ -115,7 +118,7 @@ async function sendSticker(chatId, stickerId) {
       axios.post(`${BOT_API}/sendSticker`, {
         chat_id: chatId,
         sticker: stickerId,
-      })
+      }, { timeout: 10000 })
     );
 
     if (res.data.ok) {
@@ -134,7 +137,7 @@ async function sendTyping(chatId) {
     await axios.post(`${BOT_API}/sendChatAction`, {
       chat_id: chatId,
       action: "typing",
-    });
+    }, { timeout: 5000 });
   } catch {
     // Non-critical
   }

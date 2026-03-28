@@ -1,4 +1,4 @@
-const { fetchConfig, getProducts, getSettings, getShippingZones } = require("./configManager");
+const { fetchConfig, getProducts, getSettings, getShippingZones, getKeywords, getResponses, getFaqs } = require("./configManager");
 const log = require("./logger");
 
 // ============================================================
@@ -42,13 +42,13 @@ function calculateShipping(address, totalProductPrice) {
   const zones = getShippingZones();
   const freeShipThreshold = parseInt(settings.FREE_SHIP_THRESHOLD) || 300000;
   
-  const lower = address.toLowerCase();
+  const lower = (address || "").toLowerCase();
   const freeShip = totalProductPrice >= freeShipThreshold;
 
   // Nếu không có zone nào từ sheet, dùng default
   const activeZones = zones.length > 0 ? zones : [
-    { name: "Miền Nam", fee: 20000, time: "2-3 ngày", keywords: ["hcm", "sài gòn", "bình dương"] },
-    { name: "Toàn quốc", fee: 30000, time: "3-5 ngày", keywords: [] }
+    { name: "Miền Nam", fee: parseInt(settings.DEFAULT_SHIP_SOUTH_FEE) || 20000, time: "2-3 ngày", keywords: ["hcm", "sài gòn", "bình dương"] },
+    { name: "Toàn quốc", fee: parseInt(settings.DEFAULT_SHIP_ALL_FEE) || 30000, time: "3-5 ngày", keywords: [] }
   ];
 
   for (const zone of activeZones) {
@@ -63,10 +63,11 @@ function calculateShipping(address, totalProductPrice) {
     }
   }
 
+  const unknownFee = parseInt(settings.DEFAULT_SHIP_UNKNOWN_FEE) || 30000;
   return {
     zone: "Liên tỉnh",
-    fee: freeShip ? 0 : 30000,
-    originalFee: 30000,
+    fee: freeShip ? 0 : unknownFee,
+    originalFee: unknownFee,
     time: "3-5 ngày",
     freeShip,
   };
@@ -79,18 +80,38 @@ const PRODUCT_IMAGES = {
   promo: "/public/images/tra-lai-promo.png",
 };
 
+function getProductImages() {
+  const settings = getSettings();
+  return {
+    banner: settings.IMAGE_BANNER || PRODUCT_IMAGES.banner,
+    product: settings.IMAGE_PRODUCT || PRODUCT_IMAGES.product,
+    promo: settings.IMAGE_PROMO || PRODUCT_IMAGES.promo,
+  };
+}
+
 const PRODUCT_IMAGES_PLACEHOLDER = {
   banner: "https://placehold.co/600x400?text=Tra+Lai+Binh+Long",
   product: "https://placehold.co/600x400?text=Bang+Gia+Tra+Lai",
   promo: "https://placehold.co/600x400?text=Khuyen+Mai",
 };
 
-const KEYWORDS = {
+const DEFAULT_KEYWORDS = {
   greeting: ["chào", "hello", "hi", "xin chào", "hey", "alo", "lô", "lo", "chao", "xin chao"],
   price: ["giá", "bao nhiêu", "bảng giá", "price", "gia", "bao nhieu", "bang gia"],
   promo: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "free ship", "khuyen mai", "giam gia", "uu dai"],
   image: ["hình", "ảnh", "xem sản phẩm", "hinh", "anh", "xem san pham", "cho xem", "gửi hình", "gui hinh"],
 };
+
+function getDynamicKeywords() {
+  const sheetKeywords = getKeywords();
+  const result = { ...DEFAULT_KEYWORDS };
+  for (const cat in sheetKeywords) {
+    if (sheetKeywords[cat] && sheetKeywords[cat].length > 0) {
+      result[cat] = sheetKeywords[cat];
+    }
+  }
+  return result;
+}
 
 function getPhotoCaptions() {
   const products = getProducts();
@@ -105,7 +126,7 @@ function getPhotoCaptions() {
   return banners;
 }
 
-const REPLIES = {
+const DEFAULT_REPLIES = {
   image: "Tôi đã nhận được hình ảnh! Hiện tại tôi chỉ hỗ trợ tin nhắn text. Bạn có thể mô tả bằng chữ được không? 😊",
   sticker: "😄",
   unsupported: "Xin lỗi, tôi chưa hỗ trợ loại tin nhắn này. Vui lòng gửi tin nhắn text nhé! 📝",
@@ -113,8 +134,38 @@ const REPLIES = {
   error: "Xin lỗi, tôi đang gặp sự cố. Vui lòng thử lại sau! 🙏",
 };
 
+function getDynamicReplies() {
+  const sheetResp = getResponses();
+  return {
+    image: sheetResp.REPLY_IMAGE || DEFAULT_REPLIES.image,
+    sticker: sheetResp.REPLY_STICKER || DEFAULT_REPLIES.sticker,
+    unsupported: sheetResp.REPLY_UNSUPPORTED || DEFAULT_REPLIES.unsupported,
+    rateLimited: sheetResp.REPLY_RATELIMIT || DEFAULT_REPLIES.rateLimited,
+    error: sheetResp.REPLY_ERROR || DEFAULT_REPLIES.error,
+  };
+}
+
 function getWelcomeMessage(name) {
-  const greeting = name ? `Xin chào ${name}!` : "Xin chào bạn!";
+  const settings = getSettings();
+  
+  // Lấy giờ hiện tại theo múi giờ Việt Nam (UTC+7)
+  const now = new Date();
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const vnTime = new Date(utc + (3600000 * 7));
+  const hour = vnTime.getHours();
+
+  let timeGreeting = "Xin chào";
+  if (hour >= 5 && hour < 11) timeGreeting = "Chúc bạn buổi sáng tốt lành";
+  else if (hour >= 11 && hour < 13) timeGreeting = "Chúc bạn buổi trưa vui vẻ";
+  else if (hour >= 13 && hour < 18) timeGreeting = "Chúc bạn buổi chiều thuận lợi";
+  else if (hour >= 18 || hour < 5) timeGreeting = "Chúc bạn buổi tối ấm áp";
+
+  const greeting = name ? `${timeGreeting}, ${name}!` : `${timeGreeting} bạn!`;
+  
+  if (settings.WELCOME_TEMPLATE) {
+    return settings.WELCOME_TEMPLATE.replace("{name}", name || "bạn").replace("{greeting}", greeting);
+  }
+
   const products = getProducts();
   const menuStr = products.map(p => `  🍃 ${p.name} — ${p.price.toLocaleString()}đ`).join("\n");
   
@@ -132,20 +183,28 @@ function getWelcomeMessage(name) {
   );
 }
 
-const ORDER_KEYWORDS = {
-  confirm: ["ok", "xác nhận", "đồng ý", "confirm", "yes", "có", "xac nhan", "dong y", "co"],
-  cancel: ["hủy", "không", "thôi", "cancel", "no", "huy", "khong", "thoi"],
-  edit: ["sửa", "chỉnh", "thay đổi", "edit", "change", "sửa lại", "sua", "chinh", "thay doi", "sua lai"],
-};
+function getOrderKeywords() {
+  return {
+    confirm: ["ok", "xác nhận", "đồng ý", "confirm", "yes", "có"],
+    cancel: ["hủy", "không", "thôi", "cancel", "no"],
+    edit: ["sửa", "chỉnh", "thay đổi", "edit", "change", "sửa lại"],
+  };
+}
 
-const ORDER_REPLIES = {
-  reminder: 'Bạn đang có đơn hàng chờ xác nhận. Vui lòng trả lời:\n• "OK" → xác nhận đơn\n• "Hủy" → hủy đơn\n• "Sửa" → sửa lại thông tin',
-  editPrompt: "✏️ Đã hủy đơn cũ. Bạn vui lòng nhập lại thông tin đặt hàng nhé!\n\nVí dụ: Trà Lài 250g, 2 gói, Nguyễn Văn A, 0901234567, Q1 HCM",
-  expired: "Đơn hàng đã hết hạn hoặc đã được xử lý. Vui lòng đặt lại nhé! 🙏",
-  noOrder: "Không có đơn hàng nào để hủy.",
-};
+function getOrderReplies() {
+  const sheetResp = getResponses();
+  return {
+    reminder: sheetResp.ORDER_REMINDER || 'Bạn đang có đơn hàng chờ xác nhận. Vui lòng trả lời:\n• "OK" → xác nhận đơn\n• "Hủy" → hủy đơn\n• "Sửa" → sửa lại thông tin',
+    editPrompt: sheetResp.ORDER_EDIT_PROMPT || "✏️ Đã hủy đơn cũ. Bạn vui lòng nhập lại thông tin đặt hàng nhé!",
+    expired: sheetResp.ORDER_EXPIRED || "Đơn hàng đã hết hạn hoặc đã được xử lý. Vui lòng đặt lại nhé! 🙏",
+    noOrder: sheetResp.ORDER_NO_ORDER || "Không có đơn hàng nào để xử lý.",
+  };
+}
 
 function getCacheEntries() {
+  const sheetFaqs = getFaqs();
+  if (sheetFaqs && sheetFaqs.length > 0) return sheetFaqs;
+
   const products = getProducts();
   const settings = getSettings();
   const menuShort = products.map(p => p.name.replace("Trà Lài ", "")).join(" | ");
@@ -180,34 +239,6 @@ function getCacheEntries() {
         `📦 FREE SHIP đơn từ ${(settings.FREE_SHIP_THRESHOLD / 1000)}k\n\n` +
         "Nhắn \"đặt hàng\" để mình hỗ trợ bạn nhé!",
     },
-    {
-      keywords: ["ship", "giao hàng", "vận chuyển", "phí ship", "free ship", "cod", "giao hang", "van chuyen", "phi ship"],
-      reply:
-        "🚚 Chính sách giao hàng\n\n" +
-        "  📍 Bình Long — MIỄN PHÍ, giao trong ngày\n" +
-        "  📍 Bình Phước — 1-2 ngày\n" +
-        "  📍 Miền Nam (HCM, Đông Nam Bộ...) — 2-3 ngày\n" +
-        "  📍 Miền Trung & Bắc — 3-5 ngày\n\n" +
-        "💳 Hỗ trợ COD (nhận hàng rồi thanh toán)\n" +
-        `🎁 Đơn từ ${(settings.FREE_SHIP_THRESHOLD / 1000)}k: FREE SHIP toàn quốc!\n\n` +
-        "Giao qua GHTK/GHN — đảm bảo an toàn ạ!",
-    },
-    {
-      keywords: ["khuyến mãi", "giảm giá", "ưu đãi", "sale", "km", "voucher", "khuyen mai", "giam gia", "uu dai"],
-      reply:
-        "🎁 Ưu đãi đặc biệt tại Trà Lài Shop\n\n" +
-        `  🔥 Đơn từ ${(settings.FREE_SHIP_THRESHOLD / 1000)}k → FREE SHIP toàn quốc\n` +
-        "  🔥 Khách mới → Giảm ngay 10%\n\n" +
-        "Ưu đãi có hạn — nhắn \"đặt hàng\" để mình hỗ trợ bạn nhé!",
-    },
-    {
-      keywords: ["liên hệ", "số điện thoại", "sdt", "zalo shop", "lien he", "so dien thoai"],
-      reply:
-        "📞 Liên hệ Trà Lài Shop\n\n" +
-        `  👉 Zalo: ${settings.OWNER_PHONE}\n` +
-        "  📍 Bình Long, Bình Phước\n\n" +
-        "Hoặc nhắn \"đặt hàng\" để bot hỗ trợ bạn đặt ngay ạ! 🛒",
-    },
   ];
 }
 
@@ -219,6 +250,6 @@ function matchKeywords(text, keywords) {
 module.exports = {
   getSystemPrompt, SESSION_TTL, MAX_MESSAGE_LENGTH, calculateShipping,
   getProducts, getSettings, getShippingZones,
-  PRODUCT_IMAGES, PRODUCT_IMAGES_PLACEHOLDER, KEYWORDS, getPhotoCaptions, REPLIES,
-  getWelcomeMessage, ORDER_KEYWORDS, ORDER_REPLIES, getCacheEntries, matchKeywords,
+  getProductImages, PRODUCT_IMAGES_PLACEHOLDER, getKeywords: getDynamicKeywords, getPhotoCaptions, getReplies: getDynamicReplies,
+  getWelcomeMessage, getOrderKeywords, getOrderReplies, getCacheEntries, matchKeywords,
 };

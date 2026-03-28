@@ -1,6 +1,6 @@
 const axios = require("axios");
 const { GOOGLE_SHEET_URL } = require("./config");
-const { getProducts, calculateShipping, getSettings } = require("./constants");
+const { getProducts, calculateShipping, getSettings, getOrderReplies } = require("./constants");
 const { saveOrder, updateOrderStatus, trackEvent } = require("./database");
 const log = require("./logger");
 
@@ -45,6 +45,9 @@ function createPendingOrder(chatId, displayName, parsed) {
     shipLine = `Phí ship: ${shipping.fee.toLocaleString("vi-VN")}đ (${shipping.zone}, ${shipping.time})`;
   }
 
+  const orderReplies = getOrderReplies();
+  const footer = orderReplies.reminder.split('\n').pop() || '"OK" · "Hủy" · "Sửa"';
+
   return (
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `    🛒  XÁC NHẬN ĐƠN HÀNG\n` +
@@ -59,7 +62,7 @@ function createPendingOrder(chatId, displayName, parsed) {
     `SĐT: ${parsed.phone}\n` +
     `Địa chỉ: ${parsed.address}\n\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
-    `Trả lời: "OK" · "Hủy" · "Sửa"`
+    `Trả lời: ${footer}`
   );
 }
 
@@ -141,7 +144,8 @@ function tryParseOrder(text) {
     }
   }
 
-  if (quantity < 1 || quantity > 99) quantity = 1;
+  quantity = parseInt(quantity);
+  if (isNaN(quantity) || quantity < 1 || quantity > 99) quantity = 1;
 
   let remaining = text;
   remaining = remaining.replace(phoneMatch[0], "");
