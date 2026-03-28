@@ -1,6 +1,7 @@
 const { WEBHOOK_SECRET } = require("./config");
 const { getProductImages } = require("./constants");
-const { handleTextMessage, handleImageMessage, handleStickerMessage } = require("./messageHandler");
+const { handleTextMessage, handleImageMessage, handleStickerMessage, handleFollowEvent } = require("./messageHandler");
+const { trackEvent } = require("./database");
 const log = require("./logger");
 
 // ============================================================

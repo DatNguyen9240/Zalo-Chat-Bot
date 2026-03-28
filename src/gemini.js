@@ -163,7 +163,7 @@ async function callWithRetry(fn, retries = 3) {
   }
 }
 
-function handleFunctionCall(functionCall, chatId, displayName) {
+async function handleFunctionCall(functionCall, chatId, displayName) {
   if (functionCall.name === "create_order") {
     const args = functionCall.args;
     const products = getProducts();
@@ -189,7 +189,7 @@ function handleFunctionCall(functionCall, chatId, displayName) {
       address: args.address,
     };
 
-    const orderMessage = createPendingOrder(chatId, displayName, parsed);
+    const orderMessage = await createPendingOrder(chatId, displayName, parsed);
 
     return {
       result: {
@@ -224,7 +224,7 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
 
       if (functionCalls && functionCalls.length > 0) {
         const fc = functionCalls[0];
-        const functionResult = handleFunctionCall(fc, chatId, displayName);
+        const functionResult = await handleFunctionCall(fc, chatId, displayName);
 
         if (functionResult.result?.message) {
           pendingOrderMessage = functionResult.result.message;

@@ -11,7 +11,7 @@ const pendingOrders = new Map(); // chatId -> { parsed, displayName, createdAt, 
 
 const PENDING_TIMEOUT = 5 * 60 * 1000; // 5 phút
 
-function createPendingOrder(chatId, displayName, parsed) {
+async function createPendingOrder(chatId, displayName, parsed) {
   cancelPendingTimeout(chatId);
 
   const unitPrice = Math.round(parsed.product.price || 0);
@@ -24,6 +24,27 @@ function createPendingOrder(chatId, displayName, parsed) {
     log.error(`❌ NaN Price error for ${chatId}: p=${parsed.product.price}, q=${parsed.quantity}, s=${shipping.fee}`);
     return "❌ Xin lỗi, hệ thống tính toán gặp sự cố nhỏ. Vui lòng liên hệ chủ shop để đặt hàng nhé! 🙏";
   }
+
+  // ── Kiểm tra tồn kho SỚM — trước khi hỏi xác nhận ──
+  const checkResult = await sendToGoogleSheet({
+    action: "check_stock",
+    product: parsed.product.name,
+    quantity: qty
+  });
+
+  if (checkResult && !checkResult.ok) {
+    const settings = getSettings();
+    const ownerPhone = checkResult.ownerPhone || settings.OWNER_PHONE || "0975324568";
+    if (checkResult.error === "het_hang") {
+      const available = checkResult.available ?? 0;
+      return `❌ Hết hàng!\n\nXin lỗi, ${parsed.product.name} hiện chỉ còn ${available} gói.\nBạn muốn đặt ${available} gói không? Nhắn lại mình nhé!\n\n💬 Liên hệ chủ shop: Zalo ${ownerPhone} 🙏`;
+    }
+    if (checkResult.error === "so_luong_khong_hop_le") {
+      const maxQty = checkResult.maxQty || settings.MAX_ORDER_QTY || 10;
+      return `⚠️ Số lượng vượt giới hạn!\nMỗi đơn tối đa ${maxQty} gói.\nNếu bạn cần mua số lượng nhiều hơn, vui lòng liên hệ chủ shop: Zalo ${ownerPhone} 🙏`;
+    }
+  }
+
   const priceStr = totalPrice.toLocaleString("vi-VN") + "đ";
 
   const timer = setTimeout(() => {
@@ -199,24 +220,7 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
   const totalPrice = totalProductPrice + shipping.fee;
   const settings = getSettings();
 
-  // 1) Check tồn kho
-  const checkResult = await sendToGoogleSheet({
-    action: "check_stock",
-    product: parsed.product.name,
-    quantity: parsed.quantity
-  });
-
-  if (checkResult && !checkResult.ok) {
-    const ownerPhone = checkResult.ownerPhone || settings.OWNER_PHONE || "0975324568";
-    if (checkResult.error === "het_hang") {
-      const available = checkResult.available ?? 0;
-      return `❌ Hết hàng!\n\nXin lỗi, ${parsed.product.name} hiện chỉ còn ${available} gói.\nBạn muốn đặt ${available} gói không? Nhắn lại mình nhé!\n\n💬 Liên hệ chủ shop: Zalo ${ownerPhone} 🙏`;
-    }
-    if (checkResult.error === "so_luong_khong_hop_le") {
-      const maxQty = checkResult.maxQty || settings.MAX_ORDER_QTY || 10;
-      return `⚠️ Số lượng vượt giới hạn!\nMỗi đơn tối đa ${maxQty} gói.\nNếu bạn cần mua số lượng nhiều hơn, vui lòng liên hệ chủ shop: Zalo ${ownerPhone} 🙏`;
-    }
-  }
+  // Tồn kho đã được kiểm tra ở createPendingOrder — không cần check lại
 
   // 2) Lưu SQLite (Hàng đợi nội bộ)
   const orderId = saveOrder({

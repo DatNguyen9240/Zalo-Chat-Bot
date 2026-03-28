@@ -102,7 +102,7 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
   // 3) Thử parse đơn hàng trực tiếp
   const parsed = tryParseOrder(text);
   if (parsed) {
-    const orderMsg = createPendingOrder(chatId, from.display_name, parsed);
+    const orderMsg = await createPendingOrder(chatId, from.display_name, parsed);
     await sendMessage(chatId, orderMsg);
     saveChatMessage(chatId, "Bot", "bot", orderMsg);
     return;
@@ -154,8 +154,11 @@ async function handleFollowEvent(chatId, getPhotoUrl) {
   saveChatMessage(chatId, "Bot", "bot", welcomeMsg);
 
   if (getPhotoUrl) {
-    const captions = getPhotoCaptions();
-    await sendPhoto(chatId, getPhotoUrl("banner"), captions.banner);
+    const bannerUrl = getPhotoUrl("banner");
+    if (bannerUrl && bannerUrl.startsWith("http")) {
+      const captions = getPhotoCaptions();
+      await sendPhoto(chatId, bannerUrl, captions.banner);
+    }
   }
 }
 
