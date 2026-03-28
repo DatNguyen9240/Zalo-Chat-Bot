@@ -97,25 +97,7 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
     return;
   }
 
-  // 4) Cache cho FAQ (Skip nếu nhắc đến sản phẩm hoặc vừa gửi Welcome)
-  const lower = text.toLowerCase();
-  const products = getProducts();
-  const mentionsProduct = products.some(p => p.aliases.some(a => lower.includes(a)));
-  
-  const cached = (!mentionsProduct && !sentWelcome) ? getCachedReply(text) : null;
-  
-  if (cached) {
-    await sendMessage(chatId, cached);
-    saveChatMessage(chatId, "Bot", "bot", cached);
-  } else {
-    // 5) Gemini AI
-    await sendTyping(chatId);
-    const reply = await generateReply(chatId, text, from.display_name);
-    await sendMessage(chatId, reply);
-    saveChatMessage(chatId, "Bot", "bot", reply);
-  }
-
-  // 6) Gửi ảnh sản phẩm theo từ khóa (có thể gửi kèm sau reply)
+  // 4) Gửi ảnh tự động theo từ khóa (Nếu có) - Ưu tiên gửi trước reply
   if (getPhotoUrl) {
     const captions = getPhotoCaptions();
     const keywords = getKeywords();
@@ -128,6 +110,24 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
     } else if (matchKeywords(text, keywords.image)) {
       await sendPhoto(chatId, getPhotoUrl("product"), captions.product);
     }
+  }
+
+  // 5) Cache cho FAQ (Skip nếu nhắc đến sản phẩm)
+  const lower = text.toLowerCase();
+  const products = getProducts();
+  const mentionsProduct = products.some(p => p.aliases.some(a => lower.includes(a)));
+  
+  const cached = (!mentionsProduct && !sentWelcome) ? getCachedReply(text) : null;
+  
+  if (cached) {
+    await sendMessage(chatId, cached);
+    saveChatMessage(chatId, "Bot", "bot", cached);
+  } else {
+    // 6) Gemini AI
+    await sendTyping(chatId);
+    const reply = await generateReply(chatId, text, from.display_name);
+    await sendMessage(chatId, reply);
+    saveChatMessage(chatId, "Bot", "bot", reply);
   }
 }
 
