@@ -266,8 +266,8 @@ function getOrCreateInventorySheet(ss) {
 
 function getOrCreateSettingsSheet(ss) {
   var sheet = ss.getSheetByName(SETTINGS_SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(SETTINGS_SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(SETTINGS_SHEET_NAME);
+  if (sheet.getLastRow() === 0) {
     sheet.appendRow(["Cài đặt", "Giá trị"]);
     sheet.getRange(1, 1, 1, 2).setFontWeight("bold");
     for (var i = 0; i < DEFAULT_SETTINGS.length; i++) { sheet.appendRow(DEFAULT_SETTINGS[i]); }
@@ -277,13 +277,27 @@ function getOrCreateSettingsSheet(ss) {
 
 function getOrCreateShippingSheet(ss) {
   var sheet = ss.getSheetByName(SHIPPING_SHEET_NAME);
-  if (!sheet) {
-    sheet = ss.insertSheet(SHIPPING_SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(SHIPPING_SHEET_NAME);
+  if (sheet.getLastRow() === 0) {
     sheet.appendRow(["Khu vực", "Phí ship", "Thời gian", "Keywords"]);
     sheet.getRange(1, 1, 1, 4).setFontWeight("bold");
     for (var i = 0; i < DEFAULT_SHIPPING.length; i++) { sheet.appendRow(DEFAULT_SHIPPING[i]); }
   }
   return sheet;
+}
+
+/**
+ * [QUAN TRỌNG] Chạy hàm này thủ công để khởi tạo toàn bộ Sheet mẫu
+ */
+function setupSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  getOrCreateInventorySheet(ss);
+  getOrCreateOrderSheet(ss);
+  getOrCreateSettingsSheet(ss);
+  getOrCreateShippingSheet(ss);
+  getOrCreateKeywordSheet(ss);
+  getOrCreateResponseSheet(ss);
+  getOrCreateFAQSheet(ss);
 }
 
 function getOrCreateKeywordSheet(ss) {
