@@ -21,7 +21,7 @@ function getSystemPrompt() {
     "- Hệ thống của bạn CÓ KHẢ NĂNG tự gửi hình ảnh (Banner, Ảnh sản phẩm, Ảnh khuyến mãi) tự động khi khách yêu cầu. " +
     "Nếu khách yêu cầu xem hình, hãy nhiệt tình xác nhận và nói bạn đang gửi hình cho khách xem nhé. " +
     "Thông tin sản phẩm hiện có: " + productList + ". " +
-    "Chính sách ship: Freeship từ " + settings.FREE_SHIP_THRESHOLD.toLocaleString() + "đ. " +
+    "Chính sách ship: Freeship từ " + (parseInt(settings.FREE_SHIP_THRESHOLD) || 300000).toLocaleString() + "đ. " +
     "- Luôn gợi ý bước tiếp theo (hỏi giá, đặt hàng, xem khuyến mãi). " +
     `- Nếu không biết câu trả lời, hướng dẫn liên hệ Zalo: ${settings.OWNER_PHONE}. ` +
     "- Khi khách muốn đặt hàng, hỏi đủ 5 thông tin: sản phẩm, số lượng, họ tên, SĐT, địa chỉ rồi gọi function create_order. " +
@@ -127,7 +127,7 @@ function getPhotoCaptions() {
   const banners = {
     banner: "🍵 Trà Lài Bình Long — Thơm tự nhiên, vị thanh mát!",
     product: ("📋 " + priceCaption).substring(0, 1000),
-    promo: `🎁 FREE SHIP đơn từ ${(settings.FREE_SHIP_THRESHOLD / 1000)}k | Giảm 10% khách mới`.substring(0, 1000),
+    promo: `🎁 FREE SHIP đơn từ ${((parseInt(settings.FREE_SHIP_THRESHOLD) || 300000) / 1000)}k | Giảm 10% khách mới`.substring(0, 1000),
   };
   return banners;
 }

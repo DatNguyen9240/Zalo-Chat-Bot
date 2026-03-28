@@ -157,6 +157,24 @@ function doPost(e) {
       }
     }
 
+    // ── action: "update_payment_status" — Cập nhật trạng thái thanh toán ──
+    if (data.action === "update_payment_status") {
+      var orderSheet = getOrCreateOrderSheet(ss);
+      var orderData = orderSheet.getDataRange().getValues();
+      var orderHeaders = getHeaderIndices(orderData[0]);
+      var statusCol = orderHeaders["Trạng thái"] + 1;
+      var orderIdCol = orderHeaders["Mã đơn"];
+      
+      for (var p = 1; p < orderData.length; p++) {
+        var cellOrderId = orderData[p][orderIdCol];
+        if (cellOrderId && (cellOrderId == data.orderId || String(cellOrderId) === String(data.orderId))) {
+          orderSheet.getRange(p + 1, statusCol).setValue(data.status || "Đã thanh toán");
+          return jsonResponse({ ok: true, updated: true });
+        }
+      }
+      return jsonResponse({ ok: false, error: "order_not_found" });
+    }
+
     if (data.action === "check_stock") {
       if (productRow === -1) return jsonResponse({ ok: false, error: "san_pham_khong_ton_tai" });
       if (qty > 0 && currentStock < qty) return jsonResponse({ ok: false, error: "het_hang", available: currentStock });

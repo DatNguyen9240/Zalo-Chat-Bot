@@ -3,9 +3,9 @@ const express = require("express");
 const path = require("path");
 const helmet = require("helmet");
 const cors = require("cors");
-const { PORT, BOT_MODE, GEMINI_MODEL, ADMIN_SECRET, WEBHOOK_SECRET, WEBHOOK_URL } = require("./src/config");
+const { PORT, BOT_MODE, GEMINI_MODEL, ADMIN_SECRET, WEBHOOK_SECRET, WEBHOOK_URL, CONFIG_REFRESH_MINUTES } = require("./src/config");
 const { getSessionCount, cleanup } = require("./src/gemini");
-const { registerWebhook, deleteWebhook, getWebhookInfo, getMe } = require("./src/zaloBot");
+const { registerWebhook, deleteWebhook, getWebhookInfo, getMe, sendMessage } = require("./src/zaloBot");
 const { setupWebhook } = require("./src/webhookHandler");
 const { startPolling, stopPolling } = require("./src/polling");
 const { getStats, getOrders, updateOrderStatus, closeDb } = require("./src/database");
@@ -158,6 +158,66 @@ app.patch("/admin/orders/:id", requireAdmin, (req, res) => {
   res.json({ ok: true, message: `Đơn #${req.params.id} → ${status}` });
 });
 
+// ============================================================
+// PayOS Webhook — Nhận thông báo thanh toán
+// ============================================================
+const { verifyWebhookData, isPayOSEnabled } = require("./src/payos");
+const { sendToGoogleSheet } = require("./src/order");
+
+app.post("/payos/webhook", async (req, res) => {
+  try {
+    if (!isPayOSEnabled()) return res.json({ ok: true });
+
+    const webhookData = verifyWebhookData(req.body);
+    if (!webhookData) {
+      log.warn("⚠️ PayOS webhook: Invalid signature");
+      return res.status(400).json({ error: "Invalid signature" });
+    }
+
+    const { orderCode, code, desc } = webhookData;
+    log.info(`💳 PayOS webhook: Order #${orderCode} — ${code} (${desc})`);
+
+    if (code === "00") {
+      // Thanh toán thành công
+      updateOrderStatus(orderCode, "paid");
+
+      // Đồng bộ trạng thái sang Google Sheet
+      await sendToGoogleSheet({
+        action: "update_payment_status",
+        orderId: orderCode,
+        status: "Đã thanh toán",
+      });
+
+      // Tìm chatId từ đơn hàng để gửi tin nhắn xác nhận
+      const orders = getOrders();
+      const order = orders.find(o => o.id === orderCode || o.id === String(orderCode));
+      if (order && order.chat_id) {
+        await sendMessage(order.chat_id,
+          `✅ THANH TOÁN THÀNH CÔNG!\n\n` +
+          `Đơn hàng #${orderCode} đã được thanh toán.\n` +
+          `Shop sẽ chuẩn bị hàng và giao cho bạn sớm nhất! 🚚\n\n` +
+          `Cảm ơn bạn đã tin tưởng Trà Lài Shop! 🍵💚`
+        );
+      }
+
+      log.info(`✅ PayOS: Đơn #${orderCode} đã thanh toán thành công!`);
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    log.error("❌ PayOS webhook error:", err);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Payment return pages
+app.get("/payment/success", (req, res) => {
+  res.send("<html><body style='text-align:center;font-family:sans-serif;padding:50px'><h1>✅ Thanh toán thành công!</h1><p>Cảm ơn bạn! Quay lại Zalo để xem xác nhận đơn hàng nhé 🍵</p></body></html>");
+});
+
+app.get("/payment/cancel", (req, res) => {
+  res.send("<html><body style='text-align:center;font-family:sans-serif;padding:50px'><h1>❌ Thanh toán đã hủy</h1><p>Bạn có thể nhắn lại Bot trên Zalo để đặt hàng lại nhé! 🍵</p></body></html>");
+});
 
 const server = app.listen(PORT, async () => {
   // ── Khởi tạo cấu hình từ Google Sheet ──
@@ -170,7 +230,7 @@ const server = app.listen(PORT, async () => {
     } catch (err) {
       log.error("❌ Lỗi khi tự động cập nhật cấu hình:", err.message);
     }
-  }, 10 * 60 * 1000);
+  }, CONFIG_REFRESH_MINUTES * 60 * 1000);
 
   console.log(`
 ╔══════════════════════════════════════════════╗

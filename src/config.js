@@ -13,6 +13,10 @@ const {
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW,
   GOOGLE_SHEET_URL,
+  PAYOS_CLIENT_ID,
+  PAYOS_API_KEY,
+  PAYOS_CHECKSUM_KEY,
+  CONFIG_REFRESH_MINUTES,
 } = process.env;
 
 if (!BOT_TOKEN) throw new Error("❌ Missing BOT_TOKEN in .env");
@@ -23,15 +27,19 @@ const BOT_API = `https://bot-api.zaloplatforms.com/bot${BOT_TOKEN}`;
 module.exports = {
   PORT: PORT || 3000,
   BOT_TOKEN,
-  BOT_MODE: BOT_MODE || "webhook", // "webhook" | "polling"
+  BOT_MODE: BOT_MODE || "webhook",
   GEMINI_API_KEY,
-  GEMINI_MODEL: GEMINI_MODEL || "gemini-1.5-flash-latest",
+  GEMINI_MODEL: GEMINI_MODEL || "gemini-2.0-flash",
   WEBHOOK_SECRET,
-  WEBHOOK_URL, // Public URL cho webhook (VD: https://your-app.up.railway.app/webhook)
+  WEBHOOK_URL,
   ADMIN_SECRET,
   BOT_API,
   LOG_LEVEL: LOG_LEVEL || "info",
   RATE_LIMIT_MAX: parseInt(RATE_LIMIT_MAX) || 10,
   RATE_LIMIT_WINDOW: parseInt(RATE_LIMIT_WINDOW) || 60000,
   GOOGLE_SHEET_URL,
+  PAYOS_CLIENT_ID,
+  PAYOS_API_KEY,
+  PAYOS_CHECKSUM_KEY,
+  CONFIG_REFRESH_MINUTES: parseInt(CONFIG_REFRESH_MINUTES) || 5,
 };

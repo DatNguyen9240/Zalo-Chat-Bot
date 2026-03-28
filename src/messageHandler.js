@@ -1,7 +1,7 @@
 const { getKeywords, getPhotoCaptions, getReplies, getWelcomeMessage, getOrderKeywords, getOrderReplies, getProducts, matchKeywords, getCacheEntries } = require("./constants");
 const { generateReply, hasActiveSession } = require("./gemini");
 const { getCachedReply } = require("./cache");
-const { tryParseOrder, createPendingOrder, confirmPendingOrder, cancelPendingOrder, hasPendingOrder } = require("./order");
+const { tryParseOrder, createPendingOrder, confirmPendingOrder, cancelPendingOrder, hasPendingOrder, hasPendingPaymentChoice, handlePaymentChoice } = require("./order");
 const { sendMessage, sendPhoto, sendSticker, sendTyping } = require("./zaloBot");
 const { saveChatMessage, trackEvent } = require("./database");
 const { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW } = require("./config");
@@ -85,6 +85,16 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
   // 2) Kiểm tra đơn hàng chờ xác nhận
   if (hasPendingOrder(chatId)) {
     await handlePendingOrder(chatId, text);
+    return;
+  }
+
+  // 2.5) Kiểm tra chờ chọn phương thức thanh toán
+  if (hasPendingPaymentChoice(chatId)) {
+    const payReply = await handlePaymentChoice(chatId, text);
+    if (payReply) {
+      await sendMessage(chatId, payReply);
+      saveChatMessage(chatId, "Bot", "bot", payReply);
+    }
     return;
   }
 

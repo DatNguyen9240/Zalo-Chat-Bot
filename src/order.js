@@ -188,6 +188,8 @@ function tryParseOrder(text) {
   return null;
 }
 
+const { createPaymentLink, isPayOSEnabled } = require("./payos");
+
 // ============================================================
 // Tạo đơn hàng chính thức
 // ============================================================
@@ -255,6 +257,38 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
   const productTotalStr = totalProductPrice.toLocaleString("vi-VN") + "đ";
   let shipLine = shipping.fee === 0 ? `Phí ship: MIỄN PHÍ (${shipping.zone})` : `Phí ship: ${shipping.fee.toLocaleString("vi-VN")}đ (${shipping.zone})`;
 
+  // 4) Hỏi phương thức thanh toán (nếu PayOS đã cấu hình)
+  if (isPayOSEnabled()) {
+    pendingPaymentChoice.set(chatId, {
+      orderId,
+      totalPrice,
+      product: parsed.product.name,
+      buyerName: parsed.customerName,
+      buyerPhone: parsed.phone,
+      displayName,
+    });
+
+    return (
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `  ✅  ĐƠN HÀNG #${orderId}\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `Sản phẩm: ${parsed.product.name}\n` +
+      `Số lượng: ${parsed.quantity} gói\n` +
+      `Tiền hàng: ${productTotalStr}\n` +
+      `${shipLine}\n` +
+      `Tổng thanh toán: ${priceStr}\n\n` +
+      `Người nhận: ${parsed.customerName}\n` +
+      `SĐT: ${parsed.phone}\n` +
+      `Địa chỉ: ${parsed.address}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `  💳  CHỌN PHƯƠNG THỨC THANH TOÁN\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `1️⃣ Nhắn "chuyển khoản" → Thanh toán QR/Chuyển khoản\n` +
+      `2️⃣ Nhắn "tiền mặt" → Thanh toán khi nhận hàng (COD)`
+    );
+  }
+
+  // Không có PayOS → COD mặc định
   return (
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `  ✅  ĐƠN HÀNG #${orderId}\n` +
@@ -267,8 +301,64 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
     `Người nhận: ${parsed.customerName}\n` +
     `SĐT: ${parsed.phone}\n` +
     `Địa chỉ: ${parsed.address}\n\n` +
+    `💰 Thanh toán: Tiền mặt khi nhận hàng (COD)\n` +
     `Cảm ơn ${displayName}! Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏`
   );
+}
+
+// ============================================================
+// Pending Payment Choice — chờ khách chọn phương thức thanh toán
+// ============================================================
+const pendingPaymentChoice = new Map(); // chatId -> { orderId, totalPrice, ... }
+
+function hasPendingPaymentChoice(chatId) {
+  return pendingPaymentChoice.has(chatId);
+}
+
+async function handlePaymentChoice(chatId, text) {
+  const pending = pendingPaymentChoice.get(chatId);
+  if (!pending) return null;
+
+  const lower = text.toLowerCase().trim();
+
+  // Khách chọn Chuyển khoản
+  if (lower.includes("chuyển khoản") || lower.includes("chuyen khoan") || lower.includes("qr") || lower.includes("online") || lower.includes("1")) {
+    pendingPaymentChoice.delete(chatId);
+
+    const payResult = await createPaymentLink({
+      orderId: pending.orderId,
+      amount: pending.totalPrice,
+      description: `DH${pending.orderId} ${pending.product}`,
+      buyerName: pending.buyerName,
+      buyerPhone: pending.buyerPhone,
+    });
+
+    if (payResult && payResult.checkoutUrl) {
+      updateOrderStatus(pending.orderId, "pending_payment");
+      return (
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `  💳  THANH TOÁN ĐƠN #${pending.orderId}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `Số tiền: ${pending.totalPrice.toLocaleString("vi-VN")}đ\n\n` +
+        `👉 Nhấn link để thanh toán:\n${payResult.checkoutUrl}\n\n` +
+        `⏰ Link có hiệu lực trong 15 phút.\n` +
+        `Sau khi thanh toán, Shop sẽ xác nhận tự động! ✅`
+      );
+    } else {
+      updateOrderStatus(pending.orderId, "cod");
+      return `⚠️ Không thể tạo link thanh toán lúc này. Đơn hàng #${pending.orderId} sẽ được xử lý COD (tiền mặt khi nhận hàng). Chủ shop sẽ liên hệ bạn sớm! 🙏`;
+    }
+  }
+
+  // Khách chọn COD
+  if (lower.includes("tiền mặt") || lower.includes("tien mat") || lower.includes("cod") || lower.includes("2")) {
+    pendingPaymentChoice.delete(chatId);
+    updateOrderStatus(pending.orderId, "cod");
+    return `✅ Đơn hàng #${pending.orderId} sẽ thanh toán khi nhận hàng (COD).\nCảm ơn ${pending.displayName}! Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏🍵`;
+  }
+
+  // Không hiểu lựa chọn
+  return `Bạn vui lòng chọn phương thức thanh toán:\n1️⃣ Nhắn "chuyển khoản" → QR/Chuyển khoản\n2️⃣ Nhắn "tiền mặt" → COD (trả khi nhận hàng)`;
 }
 
 async function sendToGoogleSheet(order) {
@@ -290,4 +380,6 @@ module.exports = {
   cancelPendingOrder,
   hasPendingOrder,
   sendToGoogleSheet,
+  hasPendingPaymentChoice,
+  handlePaymentChoice,
 };
