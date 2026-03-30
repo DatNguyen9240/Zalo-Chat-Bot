@@ -17,6 +17,7 @@ const {
   PAYOS_API_KEY,
   PAYOS_CHECKSUM_KEY,
   CONFIG_REFRESH_MINUTES,
+  PAYMENT_ONLINE,
 } = process.env;
 
 if (!BOT_TOKEN) throw new Error("❌ Missing BOT_TOKEN in .env");
@@ -42,4 +43,5 @@ module.exports = {
   PAYOS_API_KEY,
   PAYOS_CHECKSUM_KEY,
   CONFIG_REFRESH_MINUTES: Math.max(1, parseInt(CONFIG_REFRESH_MINUTES || 5)),
+  PAYMENT_ONLINE,
 };

@@ -1,4 +1,4 @@
-const PayOS = require("@payos/node");
+const { PayOS } = require("@payos/node");
 const { PAYOS_CLIENT_ID, PAYOS_API_KEY, PAYOS_CHECKSUM_KEY, WEBHOOK_URL } = require("./config");
 const log = require("./logger");
 
@@ -6,11 +6,11 @@ let payosInstance = null;
 
 function getPayOS() {
   if (!payosInstance && PAYOS_CLIENT_ID && PAYOS_API_KEY && PAYOS_CHECKSUM_KEY) {
-    payosInstance = new PayOS(
-      PAYOS_CLIENT_ID,
-      PAYOS_API_KEY,
-      PAYOS_CHECKSUM_KEY
-    );
+    payosInstance = new PayOS({
+      clientId: PAYOS_CLIENT_ID,
+      apiKey: PAYOS_API_KEY,
+      checksumKey: PAYOS_CHECKSUM_KEY
+    });
     log.info("✅ PayOS SDK initialized");
   }
   return payosInstance;

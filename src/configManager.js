@@ -1,5 +1,5 @@
 const axios = require("axios");
-const { GOOGLE_SHEET_URL } = require("./config");
+const { GOOGLE_SHEET_URL, PAYMENT_ONLINE } = require("./config");
 const log = require("./logger");
 
 let dynamicConfig = {
@@ -8,7 +8,7 @@ let dynamicConfig = {
     OWNER_PHONE: "0975324568",
     LOW_STOCK_THRESHOLD: 5,
     FREE_SHIP_THRESHOLD: 300000,
-    PAYMENT_ONLINE: "false",
+    PAYMENT_ONLINE: PAYMENT_ONLINE || "false",
     BANK_NAME: "",
     BANK_ACCOUNT: "",
     BANK_OWNER: "",
@@ -52,7 +52,11 @@ async function fetchConfig(isStartup = false) {
         log.info("✅ Cấu hình đã được tải từ Google Sheet.");
         
         if (res.data.settings) {
-          dynamicConfig.settings = { ...dynamicConfig.settings, ...res.data.settings };
+          // Ưu tiên PAYMENT_ONLINE từ .env, bỏ qua giá trị từ Sheet nếu .env đã được set
+          const sheetSettings = { ...res.data.settings };
+          if (PAYMENT_ONLINE) delete sheetSettings.PAYMENT_ONLINE;
+          
+          dynamicConfig.settings = { ...dynamicConfig.settings, ...sheetSettings };
         }
 
         if (res.data.products && res.data.products.length > 0) {

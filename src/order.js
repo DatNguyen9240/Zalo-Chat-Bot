@@ -79,7 +79,15 @@ function createVietQRLink(amount, orderId) {
 function isOnlinePaymentEnabled() {
   const settings = getSettings();
   const val = (settings.PAYMENT_ONLINE || "").toString().toLowerCase();
-  return val === "true" || val === "1" || val === "yes" || val === "on" || val === "bật" || val === "có";
+  
+  // Nếu cài đặt rõ ràng là tắt, thì tắt
+  if (["false", "0", "no", "off", "tắt", "không"].includes(val)) return false;
+  
+  // Nếu cài đặt rõ ràng là bật, thì bật
+  if (["true", "1", "yes", "on", "bật", "có"].includes(val)) return true;
+
+  // Nếu không có cài đặt rõ ràng, tự động bật nếu đã cấu hình PayOS
+  return isPayOSEnabled();
 }
 
 /**
@@ -338,7 +346,7 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
     address: parsed.address,
     shippingZone: shipping.zone,
     shippingFee: shipping.fee,
-    paymentMethod: isOnlinePaymentEnabled() ? "Chờ chọn" : "COD",
+    paymentMethod: isOnlinePaymentEnabled() ? "Chờ chọn" : "cod",
   });
 
   if (!confirmResult || !confirmResult.ok) {
@@ -355,7 +363,7 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
 
   const orderInfo =
     `━━━━━━━━━━━━━━━━━━━━\n` +
-    `  ✅  ĐƠN HÀNG #${orderId}\n` +
+    `  📋  ĐƠN HÀNG #${orderId}\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
     `Sản phẩm: ${parsed.product.name}\n` +
     `Số lượng: ${parsed.quantity} gói\n` +
@@ -391,7 +399,7 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
   // Không bật thanh toán online → COD mặc định
   updateOrderPaymentMethod(orderId, "cod");
   updateOrderStatus(orderId, "cod");
-  sendToGoogleSheet({ action: "update_payment_status", orderId, status: "COD", paymentMethod: "COD" }).catch(() => {});
+  sendToGoogleSheet({ action: "update_payment_status", orderId, status: "cod", paymentMethod: "cod" }).catch(() => {});
   return (
     orderInfo + `\n` +
     `💰 Thanh toán: Tiền mặt khi nhận hàng (COD)\n` +
@@ -518,7 +526,7 @@ async function handlePaymentChoice(chatId, text) {
     pendingPaymentChoice.delete(chatId);
     updateOrderPaymentMethod(pending.orderId, "cod");
     updateOrderStatus(pending.orderId, "cod");
-    sendToGoogleSheet({ action: "update_payment_status", orderId: pending.orderId, status: "cod", paymentMethod: "COD" }).catch(() => {});
+    sendToGoogleSheet({ action: "update_payment_status", orderId: pending.orderId, status: "cod", paymentMethod: "cod" }).catch(() => {});
     return `✅ Đơn hàng #${pending.orderId} sẽ thanh toán khi nhận hàng (COD).\nCảm ơn ${pending.displayName}! Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏🍵`;
   }
 
@@ -530,13 +538,13 @@ async function handlePaymentChoice(chatId, text) {
 // Xem đơn hàng (customer-facing)
 // ============================================================
 const STATUS_LABELS = {
-  "new": "🆕 Mới tạo",
+  "new": "📋 Mới tạo",
   "pending": "⏳ Chờ xử lý",
   "pending_payment": "💳 Chờ thanh toán",
   "pending_verification": "⏳ Chờ shop check tiền",
   "cod": "📦 COD - Chờ giao",
   "paid": "✅ Đã thanh toán",
-  "confirmed": "✅ Đã xác nhận",
+  "confirmed": "📋 Đã xác nhận",
   "shipping": "🚚 Đang giao hàng",
   "delivered": "✅ Đã giao",
   "cancelled": "❌ Đã hủy",
@@ -691,9 +699,13 @@ async function sendToGoogleSheet(orderData) {
   try {
     const payload = { ...orderData };
     
-    // Tự động chuyển đổi status sang label tiếng Việt cho Sheet
+    // Tự động chuyển đổi status & paymentMethod sang label tiếng Việt cho Sheet
     if (payload.status && SHEET_STATUS_LABELS[payload.status]) {
       payload.status = SHEET_STATUS_LABELS[payload.status];
+    }
+    if (payload.paymentMethod && PAYMENT_LABELS[payload.paymentMethod]) {
+      // Bỏ icon emoji khi gửi lên Sheet để dữ liệu sạch hơn (tùy chọn)
+      payload.paymentMethod = PAYMENT_LABELS[payload.paymentMethod].replace(/[\p{Emoji_Presentation}\p{Emoji}\p{Emoji_Modifier_Base}\p{Emoji_Modifier}\p{Emoji_Component}]/gu, '').trim();
     }
     
     const res = await axios.post(GOOGLE_SHEET_URL, payload, { timeout: 10000 });
