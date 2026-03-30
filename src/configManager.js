@@ -18,7 +18,8 @@ let dynamicConfig = {
   shipping: [],
   keywords: {},
   responses: {},
-  faqs: []
+  faqs: [],
+  knowledge: ""
 };
 
 // Helper parse số từ Việt Nam (xử lý dấu chấm phân cách hàng nghìn)
@@ -81,6 +82,10 @@ async function fetchConfig(isStartup = false) {
           dynamicConfig.faqs = res.data.faqs;
         }
 
+        if (res.data.knowledge) {
+          dynamicConfig.knowledge = res.data.knowledge;
+        }
+
         return dynamicConfig;
       }
     } catch (err) {
@@ -100,6 +105,7 @@ function getShippingZones() { return dynamicConfig.shipping; }
 function getKeywords() { return dynamicConfig.keywords; }
 function getResponses() { return dynamicConfig.responses; }
 function getFaqs() { return dynamicConfig.faqs; }
+function getKnowledge() { return dynamicConfig.knowledge; }
 
 module.exports = {
   fetchConfig,
@@ -110,5 +116,6 @@ module.exports = {
   getKeywords,
   getResponses,
   getFaqs,
+  getKnowledge,
   parseVNNumber
 };

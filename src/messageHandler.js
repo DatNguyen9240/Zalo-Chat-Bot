@@ -1,4 +1,4 @@
-const { getKeywords, getPhotoCaptions, getReplies, getWelcomeMessage, getOrderKeywords, getOrderReplies, getProducts, matchKeywords, getCacheEntries } = require("./constants");
+const { getKeywords, getPhotoCaptions, getReplies, getWelcomeMessage, getOrderKeywords, getOrderReplies, getProducts, matchKeywords } = require("./constants");
 const { generateReply, hasActiveSession } = require("./gemini");
 const { getCachedReply } = require("./cache");
 const { tryParseOrder, createPendingOrder, confirmPendingOrder, cancelPendingOrder, hasPendingOrder, hasPendingPaymentChoice, handlePaymentChoice, formatOrderHistory, cancelConfirmedOrder, confirmBankTransfer } = require("./order");
@@ -92,9 +92,10 @@ async function handleTextMessage(chatId, from, text, getPhotoUrl) {
 }
 
 async function processUserMessage(chatId, from, text, getPhotoUrl) {
-  log.info(`💬 ${from.display_name}: ${text}`);
+  const displayName = from?.display_name || "Khách";
+  log.info(`💬 ${displayName}: ${text}`);
   trackEvent("message", chatId);
-  saveChatMessage(chatId, from.display_name, "user", text);
+  saveChatMessage(chatId, displayName, "user", text);
 
   if (isRateLimited(chatId)) {
     const replies = getReplies();
@@ -105,7 +106,7 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
   // 1) Gửi welcome nếu session mới
   let sentWelcome = false;
   if (!hasActiveSession(chatId)) {
-    const welcomeMsg = getWelcomeMessage(from?.display_name || "bạn");
+    const welcomeMsg = getWelcomeMessage(displayName);
     await sendMessage(chatId, welcomeMsg);
     saveChatMessage(chatId, "Bot", "bot", welcomeMsg);
     sentWelcome = true;
@@ -170,7 +171,7 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
   // 3) Thử parse đơn hàng trực tiếp
   const parsed = tryParseOrder(text);
   if (parsed) {
-    const orderMsg = await createPendingOrder(chatId, from.display_name, parsed);
+    const orderMsg = await createPendingOrder(chatId, displayName, parsed);
     await sendMessage(chatId, orderMsg);
     saveChatMessage(chatId, "Bot", "bot", orderMsg);
     return;
@@ -210,7 +211,7 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
   } else {
     // 6) Gemini AI
     await sendTyping(chatId);
-    const reply = await generateReply(chatId, text, from.display_name);
+    const reply = await generateReply(chatId, text, displayName);
     await sendMessage(chatId, reply);
     saveChatMessage(chatId, "Bot", "bot", reply);
   }
@@ -263,6 +264,9 @@ async function handleImageMessage(chatId) {
     trackEvent("image_received", chatId);
     if (!chatId) return;
 
+    // Lưu lại trong lịch sử là khách đã gửi ảnh (trước khi bot reply)
+    saveChatMessage(chatId, "Khách", "user", "[Hình ảnh]");
+
     // Kiểm tra nếu khách đang có đơn chờ thanh toán → có thể là bill CK
     const orders = getOrdersByChatId(chatId, 3);
     const hasPendingPayment = orders.some(o => o.status === "pending_payment");
@@ -276,8 +280,6 @@ async function handleImageMessage(chatId) {
       await sendMessage(chatId, reply);
       saveChatMessage(chatId, "Bot", "bot", reply);
     }
-    // Lưu lại trong lịch sử là khách đã gửi ảnh
-    saveChatMessage(chatId, "Khách", "user", "[Hình ảnh]");
   });
   chatLocks.set(chatId, currentTask);
   currentTask.finally(() => { if (chatLocks.get(chatId) === currentTask) chatLocks.delete(chatId); });

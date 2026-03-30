@@ -76,6 +76,11 @@ async function sendMessage(chatId, text) {
         }, { timeout: 10000 })
       );
 
+      if (!res) {
+        log.error(`❌ sendMessage failed [${chatId}]: No response after retries`);
+        continue;
+      }
+
       if (res.data.ok) {
         log.info(`✅ Sent (${i + 1}/${parts.length}): "${parts[i].substring(0, 50)}..."`);
       } else {
@@ -103,6 +108,11 @@ async function sendPhoto(chatId, photoUrl, caption = "") {
       axios.post(`${BOT_API}/sendPhoto`, body, { timeout: 15000 })
     );
 
+    if (!res) {
+      log.error(`❌ sendPhoto failed [${chatId}]: No response after retries`);
+      return null;
+    }
+
     if (res.data.ok) {
       log.info(`📷 Photo sent to ${chatId}`);
     } else {
@@ -122,6 +132,11 @@ async function sendSticker(chatId, stickerId) {
         sticker: stickerId,
       }, { timeout: 10000 })
     );
+
+    if (!res) {
+      log.error(`❌ sendSticker failed [${chatId}]: No response after retries`);
+      return null;
+    }
 
     if (res.data.ok) {
       log.info(`🎭 Sticker sent to ${chatId}`);

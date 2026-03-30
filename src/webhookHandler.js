@@ -37,43 +37,62 @@ function getBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
+// Factory cho getPhotoUrl callback (dùng chung cho text message và follow event)
+function createPhotoUrlFactory(req) {
+  const baseUrl = getBaseUrl(req);
+  return (type) => {
+    const img = getProductImages()[type];
+    return (img && img.startsWith("http")) ? img : baseUrl + img;
+  };
+}
+
+/**
+ * Logic xử lý webhook từ Zalo — Tách biệt khỏi Express app để tái sử dụng
+ */
+async function handleUpdate(body, req) {
+  // Xác thực secret token (nếu có)
+  if (WEBHOOK_SECRET) {
+    const token = req.headers["x-bot-api-secret-token"];
+    if (token !== WEBHOOK_SECRET) {
+      log.warn("Invalid secret token");
+      return { ok: false, status: 403 };
+    }
+  }
+
+  // Hỗ trợ cả 2 format webhook (trực tiếp hoặc bọc trong .result)
+  const data = body.result || body;
+  const { event_name } = data;
+
+  if (!event_name) {
+    return { ok: true, status: 200 };
+  }
+
+  // Deduplication
+  const msgId = data.message?.msg_id || data.msg_id || data.timestamp;
+  if (isDuplicate(msgId)) return { ok: true, status: 200 };
+
+  // Lấy thông tin cơ bản
+  const chatId = data.message?.chat?.id || data.follower?.id || data.user_id;
+  const from = data.message?.from || data.follower;
+
+  log.info(`📩 [${event_name}] ${from?.display_name || chatId || "User"}`);
+
+  // Xử lý event bất đồng bộ
+  processWebhookEvent(event_name, data, chatId, from, req).catch((err) => {
+    log.error(`Webhook processing error: ${err.message}`);
+  });
+
+  return { ok: true, status: 200 };
+}
+
+/**
+ * @deprecated Dùng Router src/routes/webhooks.js thay thế. 
+ * Giữ lại tạm thời để đảm bảo index.js cũ không lỗi.
+ */
 function setupWebhook(app) {
-  app.post("/webhook", (req, res) => {
-    const body = req.body;
-
-    // Xác thực secret token
-    if (WEBHOOK_SECRET) {
-      const token = req.headers["x-bot-api-secret-token"];
-      if (token !== WEBHOOK_SECRET) {
-        log.warn("Invalid secret token");
-        return res.sendStatus(403);
-      }
-    }
-
-    // Hỗ trợ cả 2 format webhook
-    const data = body.result || body;
-    const { event_name } = data;
-
-    if (!event_name) {
-      return res.sendStatus(200);
-    }
-
-    // ✅ Trả 200 NGAY LẬP TỨC
-    res.sendStatus(200);
-
-    // Deduplication
-    const msgId = data.message?.msg_id || data.msg_id || data.timestamp;
-    if (isDuplicate(msgId)) return;
-
-    // Lấy thông tin cơ bản
-    const chatId = data.message?.chat?.id || data.follower?.id || data.user_id;
-    const from = data.message?.from || data.follower;
-
-    log.info(`📩 [${event_name}] ${from?.display_name || chatId || "User"}`);
-
-    processWebhookEvent(event_name, data, chatId, from, req).catch((err) => {
-      log.error(`Webhook processing error: ${err.message}`);
-    });
+  app.post("/webhook", async (req, res) => {
+    const result = await handleUpdate(req.body, req);
+    res.sendStatus(result.status || 200);
   });
 }
 
@@ -83,11 +102,7 @@ async function processWebhookEvent(event_name, payload, chatId, from, req) {
     case "message.text.received": {
       const text = payload.message?.text;
       if (chatId && text && !from?.is_bot) {
-        const baseUrl = getBaseUrl(req);
-        const getPhotoUrl = (type) => {
-          const img = getProductImages()[type];
-          return (img && img.startsWith("http")) ? img : baseUrl + img;
-        };
+        const getPhotoUrl = createPhotoUrlFactory(req);
         await handleTextMessage(chatId, from, text, getPhotoUrl);
       }
       break;
@@ -106,11 +121,7 @@ async function processWebhookEvent(event_name, payload, chatId, from, req) {
       if (followerId) {
         log.info(`👥 New follower: ${followerId}`);
         trackEvent("oa_follow", followerId);
-        const baseUrl = getBaseUrl(req);
-        const getPhotoUrl = (type) => {
-          const img = getProductImages()[type];
-          return (img && img.startsWith("http")) ? img : baseUrl + img;
-        };
+        const getPhotoUrl = createPhotoUrlFactory(req);
         await handleFollowEvent(followerId, getPhotoUrl);
       }
       break;
@@ -134,4 +145,4 @@ async function processWebhookEvent(event_name, payload, chatId, from, req) {
   }
 }
 
-module.exports = { setupWebhook };
+module.exports = { setupWebhook, handleUpdate };

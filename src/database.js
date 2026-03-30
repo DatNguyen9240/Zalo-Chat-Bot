@@ -52,8 +52,8 @@ db.exec(`
 
 // Safe migration: thêm cột payment_method nếu chưa có (cho DB cũ)
 try {
-  const tableTableInfo = db.prepare("PRAGMA table_info(orders)").all();
-  const hasCol = tableTableInfo.some((col) => col.name === "payment_method");
+  const tableInfo = db.prepare("PRAGMA table_info(orders)").all();
+  const hasCol = tableInfo.some((col) => col.name === "payment_method");
   if (!hasCol) {
     db.exec("ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'cod'");
     log.info("📦 DB Migration: added payment_method column");
@@ -64,15 +64,9 @@ try {
 
 log.info("💾 Database ready");
 
-log.info("💾 Database ready");
-
 // ============================================================
 // Chat History
 // ============================================================
-const insertChat = db.prepare(
-  "INSERT INTO chat_history (chat_id, display_name, role, message) VALUES (?, ?, ?, ?)"
-);
-
 function saveChatMessage(chatId, displayName, role, message) {
   try {
     const stmt = db.prepare("INSERT INTO chat_history (chat_id, display_name, role, message) VALUES (?, ?, ?, ?)");

@@ -3,6 +3,7 @@ const path = require("path");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY, GEMINI_MODEL } = require("./config");
 const { getSystemPrompt, SESSION_TTL, getReplies, getProducts, getShippingZones, getSettings } = require("./constants");
+const { parseVNNumber, getKnowledge } = require("./configManager");
 const { enqueue } = require("./queue");
 const { createPendingOrder, formatOrderHistory, cancelConfirmedOrder, isOnlinePaymentEnabled } = require("./order");
 const { trackEvent } = require("./database");
@@ -99,24 +100,29 @@ function getDynamicModel() {
   return model;
 }
 
-// Load kiến thức bổ sung từ data/*.txt
-let knowledge = "";
+// Load kiến thức bổ sung từ data/*.txt (reload mỗi lần gọi để nhận knowledge mới từ admin API)
 const dataDir = path.join(__dirname, "..", "data");
-try {
-  const files = fs.readdirSync(dataDir).filter((f) => f.endsWith(".txt"));
-  for (const file of files) {
-    const content = fs.readFileSync(path.join(dataDir, file), "utf-8");
-    knowledge += content + "\n\n";
+function loadKnowledge() {
+  // 1) Ưu tiên lấy từ Google Sheet (via configManager)
+  const dynamicK = getKnowledge();
+  
+  // 2) Kết hợp với các file kiến thức cục bộ trong data/*.txt (nếu có)
+  let localK = "";
+  try {
+    const files = fs.readdirSync(dataDir).filter((f) => f.endsWith(".txt"));
+    localK = files.map(f => fs.readFileSync(path.join(dataDir, f), "utf-8")).join("\n\n");
+  } catch (err) {
+    // Không có file kiến thức cục bộ
   }
-} catch {
-  // Ignore
+
+  // Gộp cả 2 nguồn (Google Sheet lên trước)
+  return [dynamicK, localK].filter(Boolean).join("\n\n");
 }
 
 function getDynamicInstruction() {
   const products = getProducts();
   const settings = getSettings();
   const productsText = products.map(p => `- ${p.name}: ${p.price.toLocaleString("vi-VN")}đ`).join("\n");
-  const { parseVNNumber } = require("./configManager");
   const freeShipThreshold = parseVNNumber(settings.FREE_SHIP_THRESHOLD) || 300000;
 
   const paymentInfo = isOnlinePaymentEnabled()
@@ -155,7 +161,7 @@ function getDynamicInstruction() {
             ? "Nói rằng shop có hỗ trợ chuyển khoản, khi đặt hàng xong hệ thống sẽ tự động hiện thông tin.\n"
             : "Nói rằng hiện tại shop chỉ hỗ trợ COD. Liên hệ chủ shop nếu muốn chuyển khoản.\n") +
           "\n" +
-          (knowledge ? `## Tài liệu tham khảo\n${knowledge}` : ""),
+          (() => { const k = loadKnowledge(); return k ? `## Tài liệu tham khảo\n${k}` : ""; })(),
       },
     ],
   };
@@ -275,9 +281,10 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
     try {
       const chat = getOrCreateChat(chatId);
       const timeoutMs = 30000;
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Gemini timeout")), timeoutMs)
-      );
+      let timeoutId;
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error("Gemini timeout")), timeoutMs);
+      });
 
       let result = await callWithRetry(() =>
         Promise.race([chat.sendMessage(messageText), timeoutPromise])
@@ -319,9 +326,11 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
         // No text
       }
 
+      clearTimeout(timeoutId);
       if (pendingOrderMessage) return pendingOrderMessage;
       return reply;
     } catch (err) {
+      clearTimeout(timeoutId);
       log.error("❌ Gemini API Error Details:", err);
       if (err.response) log.error("Response data:", JSON.stringify(err.response.data));
       trackEvent("error", chatId);

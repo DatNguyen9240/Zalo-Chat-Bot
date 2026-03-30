@@ -2,6 +2,7 @@ const axios = require("axios");
 const { BOT_API } = require("./config");
 const { PRODUCT_IMAGES_PLACEHOLDER } = require("./constants");
 const { handleTextMessage, handleImageMessage, handleStickerMessage, handleFollowEvent } = require("./messageHandler");
+const { trackEvent } = require("./database");
 const log = require("./logger");
 
 // Xử lý 1 update event
@@ -36,13 +37,17 @@ async function handleUpdate(update) {
     case "oa.follow":
       if (chatId) {
         log.info(`👥 New follower: ${chatId}`);
+        trackEvent("oa_follow", chatId);
         const getPhotoUrl = (type) => PRODUCT_IMAGES_PLACEHOLDER[type];
         await handleFollowEvent(chatId, getPhotoUrl);
       }
       break;
 
     case "oa.unfollow":
-      if (chatId) log.info(`👋 Lost follower: ${chatId}`);
+      if (chatId) {
+        log.info(`👋 Lost follower: ${chatId}`);
+        trackEvent("oa_unfollow", chatId);
+      }
       break;
 
     case "message.unsupported.received":

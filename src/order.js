@@ -2,6 +2,7 @@ const axios = require("axios");
 const { GOOGLE_SHEET_URL } = require("./config");
 const { getProducts, calculateShipping, getSettings, getOrderReplies } = require("./constants");
 const { saveOrder, updateOrderStatus, updateOrderPaymentMethod, trackEvent, getOrdersByChatId, cancelOrder: dbCancelOrder } = require("./database");
+const { createPaymentLink, isPayOSEnabled } = require("./payos");
 const log = require("./logger");
 
 // ============================================================
@@ -295,7 +296,6 @@ function tryParseOrder(text) {
   return null;
 }
 
-const { createPaymentLink, isPayOSEnabled } = require("./payos");
 
 // ============================================================
 // Tạo đơn hàng chính thức
@@ -304,7 +304,6 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
   const totalProductPrice = parsed.product.price * parsed.quantity;
   const shipping = calculateShipping(parsed.address, totalProductPrice);
   const totalPrice = totalProductPrice + shipping.fee;
-  const settings = getSettings();
 
   // Tồn kho đã được kiểm tra ở createPendingOrder — không cần check lại
 
@@ -320,6 +319,11 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
     address: parsed.address,
     paymentMethod: "pending", // Sẽ update sau khi khách chọn
   });
+
+  if (!orderId) {
+    log.error(`❌ Không thể lưu đơn hàng cho ${chatId}`);
+    return `❌ Xin lỗi, hệ thống gặp sự cố khi tạo đơn hàng. Vui lòng thử lại hoặc liên hệ chủ shop nhé! 🙏`;
+  }
 
   // 3) Ghi đơn vào Sheet (Đồng bộ)
   const confirmResult = await sendToGoogleSheet({
@@ -495,6 +499,9 @@ async function handlePaymentChoice(chatId, text) {
 
     // Không có PayOS, không có bank info → hướng dẫn liên hệ
     const settings = getSettings();
+    if (pending.timer) clearTimeout(pending.timer);
+    pendingPaymentChoice.delete(chatId);
+    
     updateOrderPaymentMethod(pending.orderId, "cod");
     updateOrderStatus(pending.orderId, "cod");
     sendToGoogleSheet({ action: "update_payment_status", orderId: pending.orderId, status: "COD", paymentMethod: "COD" }).catch(() => {});
@@ -526,6 +533,7 @@ const STATUS_LABELS = {
   "new": "🆕 Mới tạo",
   "pending": "⏳ Chờ xử lý",
   "pending_payment": "💳 Chờ thanh toán",
+  "pending_verification": "⏳ Chờ shop check tiền",
   "cod": "📦 COD - Chờ giao",
   "paid": "✅ Đã thanh toán",
   "confirmed": "✅ Đã xác nhận",
@@ -651,6 +659,11 @@ function confirmBankTransfer(chatId) {
   }
 
   const settings = getSettings();
+  
+  // Cập nhật trạng thái đơn sang 'pending_verification' để shop biết cần kiểm tra tiền
+  updateOrderStatus(pendingPayment.id, "pending_verification");
+  sendToGoogleSheet({ action: "update_status", orderId: pendingPayment.id, status: "pending_verification" }).catch(() => {});
+
   return (
     `📝 Đã ghi nhận! Đơn hàng #${pendingPayment.id} đang chờ shop xác nhận thanh toán.\n\n` +
     `Chủ shop sẽ kiểm tra và xác nhận sớm nhất ạ!\n` +

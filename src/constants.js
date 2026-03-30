@@ -1,5 +1,4 @@
-const { fetchConfig, getProducts, getSettings, getShippingZones, getKeywords, getResponses, getFaqs } = require("./configManager");
-const log = require("./logger");
+const { getProducts, getSettings, getShippingZones, getKeywords, getResponses, getFaqs, parseVNNumber } = require("./configManager");
 
 // ============================================================
 // Tất cả text/cấu hình có thể tùy chỉnh — sửa tại đây
@@ -21,7 +20,7 @@ function getSystemPrompt() {
     "- Hệ thống của bạn CÓ KHẢ NĂNG tự gửi hình ảnh (Banner, Ảnh sản phẩm, Ảnh khuyến mãi) tự động khi khách yêu cầu. " +
     "Nếu khách yêu cầu xem hình, hãy nhiệt tình xác nhận và nói bạn đang gửi hình cho khách xem nhé. " +
     "Thông tin sản phẩm hiện có: " + productList + ". " +
-    "Chính sách ship: Freeship từ " + (require("./configManager").parseVNNumber(settings.FREE_SHIP_THRESHOLD) || 300000).toLocaleString() + "đ. " +
+    "Chính sách ship: Freeship từ " + (parseVNNumber(settings.FREE_SHIP_THRESHOLD) || 300000).toLocaleString() + "đ. " +
     "- Luôn gợi ý bước tiếp theo (hỏi giá, đặt hàng, xem khuyến mãi). " +
     `- Nếu không biết câu trả lời, hướng dẫn liên hệ Zalo: ${settings.OWNER_PHONE}. ` +
     "- Khi khách muốn đặt hàng, hỏi đủ 5 thông tin: sản phẩm, số lượng, họ tên, SĐT, địa chỉ rồi gọi function create_order. " +
@@ -48,7 +47,6 @@ const MAX_MESSAGE_LENGTH = 2000;
 function calculateShipping(address, totalProductPrice) {
   const settings = getSettings();
   const zones = getShippingZones();
-  const { parseVNNumber } = require("./configManager");
   const freeShipThreshold = parseVNNumber(settings.FREE_SHIP_THRESHOLD) || 300000;
   
   const lower = (address || "").toLowerCase();
@@ -56,8 +54,8 @@ function calculateShipping(address, totalProductPrice) {
 
   // Nếu không có zone nào từ sheet, dùng default
   const activeZones = zones.length > 0 ? zones : [
-    { name: "Miền Nam", fee: (require("./configManager").parseVNNumber(settings.DEFAULT_SHIP_SOUTH_FEE) || 20000), time: "2-3 ngày", keywords: ["hcm", "sài gòn", "bình dương"] },
-    { name: "Toàn quốc", fee: (require("./configManager").parseVNNumber(settings.DEFAULT_SHIP_ALL_FEE) || 30000), time: "3-5 ngày", keywords: [] }
+    { name: "Miền Nam", fee: (parseVNNumber(settings.DEFAULT_SHIP_SOUTH_FEE) || 20000), time: "2-3 ngày", keywords: ["hcm", "sài gòn", "bình dương"] },
+    { name: "Toàn quốc", fee: (parseVNNumber(settings.DEFAULT_SHIP_ALL_FEE) || 30000), time: "3-5 ngày", keywords: [] }
   ];
 
   for (const zone of activeZones) {
@@ -133,7 +131,7 @@ function getPhotoCaptions() {
   const banners = {
     banner: "🍵 Trà Lài Bình Long — Thơm tự nhiên, vị thanh mát!",
     product: ("📋 " + priceCaption).substring(0, 1000),
-    promo: `🎁 FREE SHIP đơn từ ${(require("./configManager").parseVNNumber(settings.FREE_SHIP_THRESHOLD) / 1000)}k | Giảm 10% khách mới`.substring(0, 1000),
+    promo: `🎁 FREE SHIP đơn từ ${(parseVNNumber(settings.FREE_SHIP_THRESHOLD) / 1000)}k | Giảm 10% khách mới`.substring(0, 1000),
   };
   return banners;
 }
@@ -248,7 +246,7 @@ function getCacheEntries() {
       reply:
         "💰 Bảng giá Trà Lài Bình Long\n\n" +
         priceFull + "\n\n" +
-        `📦 FREE SHIP đơn từ ${(settings.FREE_SHIP_THRESHOLD / 1000)}k\n\n` +
+        `📦 FREE SHIP đơn từ ${(parseVNNumber(settings.FREE_SHIP_THRESHOLD) / 1000)}k\n\n` +
         "Nhắn \"đặt hàng\" để mình hỗ trợ bạn nhé!",
     },
     {
