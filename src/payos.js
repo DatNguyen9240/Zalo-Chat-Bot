@@ -50,7 +50,7 @@ async function createPaymentLink(order) {
       buyerPhone: order.buyerPhone || "",
     };
 
-    const result = await payos.createPaymentLink(paymentData);
+    const result = await payos.paymentRequests.create(paymentData);
 
     log.info(`💳 PayOS link created: Order #${orderCode} — ${result.checkoutUrl}`);
 
@@ -75,7 +75,7 @@ function verifyWebhookData(body) {
   if (!payos) return null;
 
   try {
-    return payos.verifyPaymentWebhookData(body);
+    return payos.webhooks.verify(body);
   } catch (err) {
     log.error("❌ PayOS webhook verification failed:", err);
     return null;
