@@ -30,6 +30,13 @@ var DEFAULT_SETTINGS = [
   ["DEFAULT_SHIP_ALL_FEE", 30000],
   ["IMAGE_BANNER", "https://placehold.co/600x400?text=Tra+Lai+Shop+Welcome"],
   ["IMAGE_PRODUCT", "https://placehold.co/600x400?text=Menu+SanPham"],
+  ["PAYMENT_ONLINE", "false"],
+  ["BANK_NAME", ""],
+  ["BANK_ACCOUNT", ""],
+  ["BANK_OWNER", ""],
+  ["BANK_BIN", ""],
+  ["BOT_NAME", "Nhất Lài"],
+  ["SHOP_DESC", "chuyên trà lài Bình Long — chuẩn vị thơm tự nhiên"],
 ];
 
 var DEFAULT_KEYWORDS_SHEET = [
@@ -42,6 +49,13 @@ var DEFAULT_RESPONSES_SHEET = [
   ["WELCOME", "Chào mừng bạn đến với Trà Lài Shop! Chúc bạn một ngày tốt lành nhé! 🍵"],
   ["ORDER_SUCCESS", "Dạ shop đã nhận được đơn hàng của bạn rồi ạ! Cảm ơn bạn rất nhiều! 🙏"],
 ];
+
+function parseVNNumber(val) {
+  if (val === null || val === undefined || val === "") return 0;
+  if (typeof val === "number") return Math.round(val);
+  var clean = val.toString().replace(/\./g, "").replace(/,/g, "").trim();
+  return parseInt(clean) || 0;
+}
 
 function doPost(e) {
   var lock = LockService.getScriptLock();
@@ -126,6 +140,8 @@ function doPost(e) {
 
       return jsonResponse({ 
         ok: true, 
+        version: "1.2.0",
+        timestamp: new Date().toISOString(),
         settings: settings, 
         products: products, 
         shipping: shipping,
@@ -136,22 +152,22 @@ function doPost(e) {
     }
 
     // ── Tinh toán ──
-    var MAX_QTY = parseInt(settings["MAX_ORDER_QTY"]) || 10;
+    var MAX_QTY = parseVNNumber(settings["MAX_ORDER_QTY"]) || 10;
     var OWNER_PHONE = settings["OWNER_PHONE"] || "0975324568";
-    var qty = parseInt(data.quantity) || 0;
+    var qty = parseVNNumber(data.quantity) || 0;
     
     var invData = invSheet.getDataRange().getValues();
     var invHeaders = getHeaderIndices(invData[0]);
     var productRow = -1;
     var currentStock = -1;
     
-    if (data.product) {
+    if (data.product && invHeaders["Sản phẩm"] !== undefined) {
       var searchName = data.product.toString().trim();
       for (var i = 1; i < invData.length; i++) {
         var rowName = invData[i][invHeaders["Sản phẩm"]];
         if (rowName && rowName.toString().trim() === searchName) {
           productRow = i + 1;
-          currentStock = parseInt(invData[i][invHeaders["Tồn kho"]]) || 0;
+          currentStock = parseVNNumber(invData[i][invHeaders["Tồn kho"]]) || 0;
           break;
         }
       }
@@ -167,8 +183,32 @@ function doPost(e) {
       
       for (var p = 1; p < orderData.length; p++) {
         var cellOrderId = orderData[p][orderIdCol];
-        if (cellOrderId && (cellOrderId == data.orderId || String(cellOrderId) === String(data.orderId))) {
+        // So sánh linh hoạt số/chuỗi
+        if (cellOrderId !== "" && (cellOrderId == data.orderId || String(cellOrderId).trim() === String(data.orderId).trim())) {
           orderSheet.getRange(p + 1, statusCol).setValue(data.status || "Đã thanh toán");
+          // Cập nhật cột Thanh toán nếu có
+          if (data.paymentMethod && orderHeaders["Thanh toán"] !== undefined) {
+            orderSheet.getRange(p + 1, orderHeaders["Thanh toán"] + 1).setValue(data.paymentMethod);
+          }
+          return jsonResponse({ ok: true, updated: true });
+        }
+      }
+      return jsonResponse({ ok: false, error: "order_not_found" });
+    }
+
+    // ── action: "update_status" — Cập nhật trạng thái đơn hàng (từ bot) ──
+    if (data.action === "update_status") {
+      var orderSheet = getOrCreateOrderSheet(ss);
+      var orderData = orderSheet.getDataRange().getValues();
+      var orderHeaders = getHeaderIndices(orderData[0]);
+      var statusCol = orderHeaders["Trạng thái"] + 1;
+      var orderIdCol = orderHeaders["Mã đơn"];
+      
+      for (var p = 1; p < orderData.length; p++) {
+        var cellOrderId = orderData[p][orderIdCol];
+        // So sánh linh hoạt số/chuỗi
+        if (cellOrderId !== "" && (cellOrderId == data.orderId || String(cellOrderId).trim() === String(data.orderId).trim())) {
+          orderSheet.getRange(p + 1, statusCol).setValue(data.status || "Cập nhật");
           return jsonResponse({ ok: true, updated: true });
         }
       }
@@ -218,21 +258,25 @@ function doPost(e) {
       else if (h === "Khu vực ship") newRow[k] = data.shippingZone || "";
       else if (h === "Phí ship") newRow[k] = data.shippingFee || 0;
       else if (h === "Trạng thái") newRow[k] = "Mới";
+      else if (h === "Thanh toán") newRow[k] = data.paymentMethod || "Chờ chọn";
       else newRow[k] = "";
     }
     orderSheet.appendRow(newRow);
 
     if (data.phone) updateCustomerSheet(ss, data, qty, nowStr);
 
-    if (productRow !== -1) {
+    if (productRow !== -1 && invHeaders["Tồn kho"] !== undefined) {
       var remaining = currentStock - qty;
-      orderSheet.getParent().getSheetByName(INVENTORY_SHEET_NAME).getRange(productRow, invHeaders["Tồn kho"] + 1).setValue(remaining);
-      var threshold = parseInt(settings["LOW_STOCK_THRESHOLD"]) || 5;
-      var warningCell = orderSheet.getParent().getSheetByName(INVENTORY_SHEET_NAME).getRange(productRow, invHeaders["Cảnh báo"] + 1);
-      if (remaining <= threshold) {
-        warningCell.setValue("⚠️ SẮP HẾT HÀNG").setBackground("#FF0000").setFontColor("#FFFFFF").setFontWeight("bold");
-      } else {
-        warningCell.clearContent().setBackground(null);
+      ss.getSheetByName(INVENTORY_SHEET_NAME).getRange(productRow, invHeaders["Tồn kho"] + 1).setValue(remaining);
+      
+      var threshold = parseVNNumber(settings["LOW_STOCK_THRESHOLD"]) || 5;
+      if (invHeaders["Cảnh báo"] !== undefined) {
+        var warningCell = ss.getSheetByName(INVENTORY_SHEET_NAME).getRange(productRow, invHeaders["Cảnh báo"] + 1);
+        if (remaining <= threshold) {
+          warningCell.setValue("⚠️ SẮP HẾT HÀNG").setBackground("#FF0000").setFontColor("#FFFFFF").setFontWeight("bold");
+        } else {
+          warningCell.clearContent().setBackground(null);
+        }
       }
     }
 
@@ -265,8 +309,15 @@ function getOrCreateOrderSheet(ss) {
   var sheet = ss.getSheetByName(ORDER_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(ORDER_SHEET_NAME);
-    sheet.appendRow(["Mã đơn", "Ngày đặt", "Khách (Zalo)", "Sản phẩm", "Số lượng", "Tổng tiền", "Người nhận", "SĐT", "Địa chỉ", "Khu vực ship", "Phí ship", "Trạng thái"]);
-    sheet.getRange(1, 1, 1, 12).setFontWeight("bold");
+    sheet.appendRow(["Mã đơn", "Ngày đặt", "Khách (Zalo)", "Sản phẩm", "Số lượng", "Tổng tiền", "Người nhận", "SĐT", "Địa chỉ", "Khu vực ship", "Phí ship", "Trạng thái", "Thanh toán"]);
+    sheet.getRange(1, 1, 1, 13).setFontWeight("bold");
+  } else {
+    // Migration: thêm cột Thanh toán nếu chưa có
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (headers.indexOf("Thanh toán") === -1) {
+      var nextCol = sheet.getLastColumn() + 1;
+      sheet.getRange(1, nextCol).setValue("Thanh toán").setFontWeight("bold");
+    }
   }
   return sheet;
 }
@@ -379,6 +430,8 @@ function updateCustomerSheet(ss, data, qty, nowStr) {
   var currentData = sheet.getDataRange().getValues();
   var headers = getHeaderIndices(currentData[0]);
   var foundRow = -1;
+  
+  if (!data.phone) return;
   var searchPhone = data.phone.toString().trim();
   
   for (var i = 1; i < currentData.length; i++) {

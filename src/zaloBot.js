@@ -95,7 +95,9 @@ async function sendMessage(chatId, text) {
 async function sendPhoto(chatId, photoUrl, caption = "") {
   try {
     const body = { chat_id: chatId, photo: photoUrl };
-    if (caption) body.caption = caption;
+    if (caption) {
+      body.caption = caption.toString().substring(0, 1000);
+    }
 
     const res = await zaloRetry(() =>
       axios.post(`${BOT_API}/sendPhoto`, body, { timeout: 15000 })

@@ -4,7 +4,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { GEMINI_API_KEY, GEMINI_MODEL } = require("./config");
 const { getSystemPrompt, SESSION_TTL, getReplies, getProducts, getShippingZones, getSettings } = require("./constants");
 const { enqueue } = require("./queue");
-const { createPendingOrder } = require("./order");
+const { createPendingOrder, formatOrderHistory, cancelConfirmedOrder, isOnlinePaymentEnabled } = require("./order");
 const { trackEvent } = require("./database");
 const log = require("./logger");
 
@@ -62,6 +62,31 @@ function getDynamicModel() {
           required: ["product", "quantity", "customer_name", "phone", "address"],
         },
       },
+      {
+        name: "check_order",
+        description:
+          "Tra cứu đơn hàng của khách. Gọi khi khách hỏi về đơn hàng, trạng thái đơn, lịch sử mua hàng. " +
+          "KHÔNG CẦN THAM SỐ — hệ thống tự tra theo chat ID của khách.",
+        parameters: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "cancel_order",
+        description:
+          "Hủy đơn hàng của khách. Gọi khi khách muốn hủy đơn. " +
+          "Có thể truyền order_id nếu khách chỉ định, hoặc để trống để hủy đơn gần nhất.",
+        parameters: {
+          type: "object",
+          properties: {
+            order_id: {
+              type: "integer",
+              description: "Mã đơn hàng cần hủy (tùy chọn, nếu không có sẽ hủy đơn gần nhất)",
+            },
+          },
+        },
+      },
     ],
   };
 
@@ -91,7 +116,12 @@ function getDynamicInstruction() {
   const products = getProducts();
   const settings = getSettings();
   const productsText = products.map(p => `- ${p.name}: ${p.price.toLocaleString("vi-VN")}đ`).join("\n");
-  const freeShipThreshold = parseInt(settings.FREE_SHIP_THRESHOLD) || 300000;
+  const { parseVNNumber } = require("./configManager");
+  const freeShipThreshold = parseVNNumber(settings.FREE_SHIP_THRESHOLD) || 300000;
+
+  const paymentInfo = isOnlinePaymentEnabled()
+    ? "Shop hỗ trợ thanh toán: COD (trả khi nhận hàng) và Chuyển khoản ngân hàng. Sau khi đặt hàng, hệ thống sẽ tự động hỏi khách chọn phương thức. "
+    : "Shop thanh toán COD (trả khi nhận hàng). ";
 
   return {
     parts: [
@@ -113,6 +143,18 @@ function getDynamicInstruction() {
           getShippingZones().map((z) => `- ${z.name}: ${z.fee === 0 ? "MIỄN PHÍ" : z.fee.toLocaleString("vi-VN") + "đ"} (${z.time})`).join("\n") +
           `\n- Đơn từ ${(freeShipThreshold / 1000)}k: MIỄN PHÍ SHIP toàn quốc` +
           "\n\n" +
+          "## Thanh toán\n" +
+          paymentInfo +
+          "\n\n" +
+          "## Chức năng bổ sung\n" +
+          "- Khi khách hỏi về đơn hàng đã đặt, trạng thái đơn → gọi function check_order.\n" +
+          "- Khi khách muốn hủy đơn → gọi function cancel_order.\n" +
+          "- KHÔNG TỰ BỊA thông tin đơn hàng. Luôn dùng function để tra cứu.\n" +
+          "- Khi khách hỏi về chuyển khoản/thanh toán online: " +
+          (isOnlinePaymentEnabled()
+            ? "Nói rằng shop có hỗ trợ chuyển khoản, khi đặt hàng xong hệ thống sẽ tự động hiện thông tin.\n"
+            : "Nói rằng hiện tại shop chỉ hỗ trợ COD. Liên hệ chủ shop nếu muốn chuyển khoản.\n") +
+          "\n" +
           (knowledge ? `## Tài liệu tham khảo\n${knowledge}` : ""),
       },
     ],
@@ -202,6 +244,29 @@ async function handleFunctionCall(functionCall, chatId, displayName) {
       },
     };
   }
+
+  if (functionCall.name === "check_order") {
+    const orderHistory = formatOrderHistory(chatId);
+    return {
+      result: {
+        success: true,
+        message: orderHistory,
+      },
+    };
+  }
+
+  if (functionCall.name === "cancel_order") {
+    const args = functionCall.args || {};
+    const text = args.order_id ? `hủy đơn ${args.order_id}` : "hủy đơn";
+    const cancelResult = cancelConfirmedOrder(chatId, text);
+    return {
+      result: {
+        success: true,
+        message: cancelResult,
+      },
+    };
+  }
+
   return { result: { error: "Function không hợp lệ" } };
 }
 
@@ -223,23 +288,24 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
       let pendingOrderMessage = null;
 
       if (functionCalls && functionCalls.length > 0) {
-        const fc = functionCalls[0];
-        const functionResult = await handleFunctionCall(fc, chatId, displayName);
-
-        if (functionResult.result?.message) {
-          pendingOrderMessage = functionResult.result.message;
+        const functionResponses = [];
+        
+        for (const fc of functionCalls) {
+          const functionResult = await handleFunctionCall(fc, chatId, displayName);
+          if (functionResult.result?.message) {
+            pendingOrderMessage = functionResult.result.message;
+          }
+          functionResponses.push({
+            functionResponse: {
+              name: fc.name,
+              response: functionResult,
+            },
+          });
         }
 
         result = await callWithRetry(() =>
           Promise.race([
-            chat.sendMessage([
-              {
-                functionResponse: {
-                  name: fc.name,
-                  response: functionResult,
-                },
-              },
-            ]),
+            chat.sendMessage(functionResponses),
             timeoutPromise,
           ])
         );
@@ -258,6 +324,7 @@ async function generateReply(chatId, messageText, displayName = "Khách") {
     } catch (err) {
       log.error("❌ Gemini API Error Details:", err);
       if (err.response) log.error("Response data:", JSON.stringify(err.response.data));
+      trackEvent("error", chatId);
       return getReplies().error;
     }
   });

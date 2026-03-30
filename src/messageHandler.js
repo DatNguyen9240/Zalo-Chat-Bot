@@ -1,9 +1,9 @@
 const { getKeywords, getPhotoCaptions, getReplies, getWelcomeMessage, getOrderKeywords, getOrderReplies, getProducts, matchKeywords, getCacheEntries } = require("./constants");
 const { generateReply, hasActiveSession } = require("./gemini");
 const { getCachedReply } = require("./cache");
-const { tryParseOrder, createPendingOrder, confirmPendingOrder, cancelPendingOrder, hasPendingOrder, hasPendingPaymentChoice, handlePaymentChoice } = require("./order");
+const { tryParseOrder, createPendingOrder, confirmPendingOrder, cancelPendingOrder, hasPendingOrder, hasPendingPaymentChoice, handlePaymentChoice, formatOrderHistory, cancelConfirmedOrder, confirmBankTransfer } = require("./order");
 const { sendMessage, sendPhoto, sendSticker, sendTyping } = require("./zaloBot");
-const { saveChatMessage, trackEvent } = require("./database");
+const { saveChatMessage, trackEvent, getOrdersByChatId } = require("./database");
 const { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW } = require("./config");
 const log = require("./logger");
 
@@ -36,6 +36,47 @@ setInterval(() => {
 
 const chatLocks = new Map();
 
+// ============================================================
+// Keywords cho các tính năng mới
+// ============================================================
+const ORDER_HISTORY_KEYWORDS = [
+  "đơn hàng của tôi", "đơn hàng của mình", "đơn của tôi", "đơn của mình",
+  "xem đơn hàng", "xem đơn", "kiểm tra đơn", "check đơn", "check don",
+  "don cua toi", "xem don hang",
+  "lịch sử đơn", "lich su don", "tra cứu đơn", "tra cuu don",
+  "tracking", "trạng thái đơn", "trang thai don",
+  "đơn đã đặt", "don da dat"
+];
+
+// "đơn hàng" và "don hang" bị loại vì quá chung, dễ match "đặt đơn hàng"
+
+const ORDER_CANCEL_KEYWORDS = [
+  "hủy đơn", "huy don", "cancel order", "huỷ đơn",
+  "hủy đơn hàng", "huy don hang", "bỏ đơn", "bo don"
+];
+
+const BANK_TRANSFER_CONFIRM_KEYWORDS = [
+  "đã chuyển khoản", "da chuyen khoan", "đã ck", "da ck",
+  "đã thanh toán", "da thanh toan", "đã chuyển", "da chuyen",
+  "chuyển rồi", "chuyen roi", "đã gửi tiền", "da gui tien"
+];
+
+const ORDER_INTENT_WORDS = ["đặt hàng", "mua hàng", "đặt đơn", "muốn mua", "muốn đặt", "order "];
+
+function matchesAny(text, keywords) {
+  const lower = text.toLowerCase().trim();
+  return keywords.some(kw => lower.includes(kw));
+}
+
+function isOrderHistoryIntent(text) {
+  const lower = text.toLowerCase().trim();
+  // Phải match keyword xem đơn
+  if (!ORDER_HISTORY_KEYWORDS.some(kw => lower.includes(kw))) return false;
+  // Nhưng không match intent đặt hàng (ví dụ: "đặt đơn hàng", "muốn mua hàng")
+  if (ORDER_INTENT_WORDS.some(w => lower.includes(w))) return false;
+  return true;
+}
+
 async function handleTextMessage(chatId, from, text, getPhotoUrl) {
   const previousTask = chatLocks.get(chatId) || Promise.resolve();
   const currentTask = previousTask.then(async () => {
@@ -64,7 +105,7 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
   // 1) Gửi welcome nếu session mới
   let sentWelcome = false;
   if (!hasActiveSession(chatId)) {
-    const welcomeMsg = getWelcomeMessage(from.display_name);
+    const welcomeMsg = getWelcomeMessage(from?.display_name || "bạn");
     await sendMessage(chatId, welcomeMsg);
     saveChatMessage(chatId, "Bot", "bot", welcomeMsg);
     sentWelcome = true;
@@ -96,6 +137,33 @@ async function processUserMessage(chatId, from, text, getPhotoUrl) {
       await sendMessage(chatId, payReply);
       saveChatMessage(chatId, "Bot", "bot", payReply);
     }
+    return;
+  }
+
+  // 2.6) Xác nhận đã chuyển khoản
+  if (matchesAny(text, BANK_TRANSFER_CONFIRM_KEYWORDS)) {
+    const confirmReply = confirmBankTransfer(chatId);
+    if (confirmReply) {
+      await sendMessage(chatId, confirmReply);
+      saveChatMessage(chatId, "Bot", "bot", confirmReply);
+      return;
+    }
+    // Không có đơn chờ thanh toán → để AI xử lý
+  }
+
+  // 2.7) Xem đơn hàng
+  if (isOrderHistoryIntent(text)) {
+    const historyReply = formatOrderHistory(chatId);
+    await sendMessage(chatId, historyReply);
+    saveChatMessage(chatId, "Bot", "bot", historyReply);
+    return;
+  }
+
+  // 2.8) Hủy đơn hàng sau confirm
+  if (matchesAny(text, ORDER_CANCEL_KEYWORDS)) {
+    const cancelReply = cancelConfirmedOrder(chatId, text);
+    await sendMessage(chatId, cancelReply);
+    saveChatMessage(chatId, "Bot", "bot", cancelReply);
     return;
   }
 
@@ -193,7 +261,23 @@ async function handleImageMessage(chatId) {
   const previousTask = chatLocks.get(chatId) || Promise.resolve();
   const currentTask = previousTask.then(async () => {
     trackEvent("image_received", chatId);
-    if (chatId) await sendMessage(chatId, getReplies().image);
+    if (!chatId) return;
+
+    // Kiểm tra nếu khách đang có đơn chờ thanh toán → có thể là bill CK
+    const orders = getOrdersByChatId(chatId, 3);
+    const hasPendingPayment = orders.some(o => o.status === "pending_payment");
+
+    if (hasPendingPayment) {
+      const reply = "📸 Cảm ơn bạn đã gửi ảnh! Nếu đây là bill chuyển khoản, chủ shop sẽ kiểm tra và xác nhận sớm nhất ạ! 🙏";
+      await sendMessage(chatId, reply);
+      saveChatMessage(chatId, "Bot", "bot", reply);
+    } else {
+      const reply = getReplies().image;
+      await sendMessage(chatId, reply);
+      saveChatMessage(chatId, "Bot", "bot", reply);
+    }
+    // Lưu lại trong lịch sử là khách đã gửi ảnh
+    saveChatMessage(chatId, "Khách", "user", "[Hình ảnh]");
   });
   chatLocks.set(chatId, currentTask);
   currentTask.finally(() => { if (chatLocks.get(chatId) === currentTask) chatLocks.delete(chatId); });
@@ -208,6 +292,9 @@ async function handleStickerMessage(chatId, message) {
        const replies = getReplies();
        if (stickerId) await sendSticker(chatId, stickerId);
        else await sendMessage(chatId, replies.sticker);
+       
+       saveChatMessage(chatId, "Khách", "user", "[Sticker]");
+       saveChatMessage(chatId, "Bot", "bot", "[Sticker Response]");
     }
   });
   chatLocks.set(chatId, currentTask);

@@ -37,6 +37,7 @@ db.exec(`
     phone TEXT,
     address TEXT,
     status TEXT DEFAULT 'new',
+    payment_method TEXT DEFAULT 'cod',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -46,7 +47,22 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_stats_created ON stats(created_at);
   CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
   CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at);
+  CREATE INDEX IF NOT EXISTS idx_orders_chat_id ON orders(chat_id);
 `);
+
+// Safe migration: thêm cột payment_method nếu chưa có (cho DB cũ)
+try {
+  const tableTableInfo = db.prepare("PRAGMA table_info(orders)").all();
+  const hasCol = tableTableInfo.some((col) => col.name === "payment_method");
+  if (!hasCol) {
+    db.exec("ALTER TABLE orders ADD COLUMN payment_method TEXT DEFAULT 'cod'");
+    log.info("📦 DB Migration: added payment_method column");
+  }
+} catch (err) {
+  // Column already exists or other error
+}
+
+log.info("💾 Database ready");
 
 log.info("💾 Database ready");
 
@@ -59,9 +75,10 @@ const insertChat = db.prepare(
 
 function saveChatMessage(chatId, displayName, role, message) {
   try {
-    insertChat.run(chatId, displayName, role, message);
+    const stmt = db.prepare("INSERT INTO chat_history (chat_id, display_name, role, message) VALUES (?, ?, ?, ?)");
+    stmt.run(chatId, displayName, role, message);
   } catch (err) {
-    log.error("DB saveChatMessage:", err.message);
+    log.error("❌ DB saveChatMessage failed:", err.message);
   }
 }
 
@@ -76,13 +93,13 @@ function getChatHistory(chatId, limit = 20) {
 // Orders
 // ============================================================
 const insertOrder = db.prepare(
-  "INSERT INTO orders (chat_id, display_name, product, quantity, total_price, customer_name, phone, address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  "INSERT INTO orders (chat_id, display_name, product, quantity, total_price, customer_name, phone, address, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
 );
 
-function saveOrder({ chatId, displayName, product, quantity, totalPrice, customerName, phone, address }) {
+function saveOrder({ chatId, displayName, product, quantity, totalPrice, customerName, phone, address, paymentMethod = "cod" }) {
   try {
-    const info = insertOrder.run(chatId, displayName, product, quantity, totalPrice, customerName, phone, address);
-    log.info(`🛒 Order #${info.lastInsertRowid} saved: ${quantity}x ${product} = ${totalPrice}đ`);
+    const info = insertOrder.run(chatId, displayName, product, quantity, totalPrice, customerName, phone, address, paymentMethod);
+    log.info(`🛒 Order #${info.lastInsertRowid} saved: ${quantity}x ${product} = ${totalPrice}đ [${paymentMethod}]`);
     return info.lastInsertRowid;
   } catch (err) {
     log.error("DB saveOrder:", err.message);
@@ -99,10 +116,39 @@ function getOrders(status = null) {
 
 function updateOrderStatus(orderId, status) {
   try {
-    db.prepare("UPDATE orders SET status = ? WHERE id = ?").run(status, orderId);
+    db.prepare("UPDATE orders SET status = ? WHERE id = ?").run(status, Number(orderId));
   } catch (err) {
     log.error("DB updateOrderStatus:", err.message);
   }
+}
+
+function updateOrderPaymentMethod(orderId, paymentMethod) {
+  try {
+    db.prepare("UPDATE orders SET payment_method = ? WHERE id = ?").run(paymentMethod, Number(orderId));
+  } catch (err) {
+    log.error("DB updateOrderPaymentMethod:", err.message);
+  }
+}
+
+function getOrdersByChatId(chatId, limit = 5) {
+  return db
+    .prepare("SELECT * FROM orders WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?")
+    .all(chatId, limit);
+}
+
+function getOrderById(orderId) {
+  return db.prepare("SELECT * FROM orders WHERE id = ?").get(Number(orderId));
+}
+
+function cancelOrder(orderId) {
+  const oId = Number(orderId);
+  const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(oId);
+  if (!order) return { ok: false, error: "not_found" };
+  if (["cancelled", "delivered", "shipping"].includes(order.status)) {
+    return { ok: false, error: "cannot_cancel", status: order.status };
+  }
+  db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ?").run(oId);
+  return { ok: true, order };
 }
 
 // ============================================================
@@ -159,10 +205,18 @@ function getStats() {
     .prepare("SELECT COUNT(*) as count FROM orders WHERE status = 'new'")
     .get().count;
 
+  const totalRevenue = db
+    .prepare("SELECT SUM(total_price) as total FROM orders WHERE status != 'cancelled'")
+    .get().total || 0;
+
+  const todayRevenue = db
+    .prepare("SELECT SUM(total_price) as total FROM orders WHERE status != 'cancelled' AND date(created_at) = ?")
+    .get(today).total || 0;
+
   const daily = db
     .prepare(`
-      SELECT date(created_at) as day, COUNT(*) as count 
-      FROM stats WHERE event_type = 'message'
+      SELECT date(created_at) as day, COUNT(*) as count, SUM(total_price) as total
+      FROM orders WHERE status != 'cancelled'
       GROUP BY date(created_at)
       ORDER BY day DESC LIMIT 7
     `)
@@ -171,7 +225,7 @@ function getStats() {
 
   return {
     totalMessages, todayMessages, uniqueUsers, todayUsers,
-    totalPhotos, totalErrors, totalOrders, newOrders, daily,
+    totalPhotos, totalErrors, totalOrders, newOrders, totalRevenue, todayRevenue, daily,
   };
 }
 
@@ -183,6 +237,6 @@ function closeDb() {
 module.exports = {
   saveChatMessage, getChatHistory,
   trackEvent, getStats,
-  saveOrder, getOrders, updateOrderStatus,
+  saveOrder, getOrders, getOrdersByChatId, getOrderById, updateOrderStatus, updateOrderPaymentMethod, cancelOrder,
   closeDb,
 };

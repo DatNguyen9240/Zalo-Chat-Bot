@@ -7,7 +7,12 @@ let dynamicConfig = {
     MAX_ORDER_QTY: 10,
     OWNER_PHONE: "0975324568",
     LOW_STOCK_THRESHOLD: 5,
-    FREE_SHIP_THRESHOLD: 300000
+    FREE_SHIP_THRESHOLD: 300000,
+    PAYMENT_ONLINE: "false",
+    BANK_NAME: "",
+    BANK_ACCOUNT: "",
+    BANK_OWNER: "",
+    BANK_BIN: "",
   },
   products: [],
   shipping: [],
@@ -16,7 +21,15 @@ let dynamicConfig = {
   faqs: []
 };
 
-// Cấu hình mặc định nếu Sheet lỗi
+// Helper parse số từ Việt Nam (xử lý dấu chấm phân cách hàng nghìn)
+function parseVNNumber(val) {
+  if (val === null || val === undefined) return 0;
+  if (typeof val === "number") return Math.round(val);
+  const clean = val.toString().replace(/\./g, "").replace(/,/g, "").trim();
+  return parseInt(clean) || 0;
+}
+
+const GOOGLE_SHEET_URL_ENV = GOOGLE_SHEET_URL;
 const DEFAULT_PRODUCTS = [
   { id: 1, name: "Trà Lài 100g", price: 50000, aliases: ["100g", "100 g", "100gram", "gói nhỏ"] },
   { id: 2, name: "Trà Lài 250g", price: 110000, aliases: ["250g", "250 g", "250gram", "gói vừa"] },
@@ -45,7 +58,7 @@ async function fetchConfig(isStartup = false) {
           dynamicConfig.products = res.data.products.map((p, index) => ({
             id: index + 1,
             name: p.name,
-            price: parseInt(p.price) || 0,
+            price: parseVNNumber(p.price),
             aliases: p.aliases || []
           }));
         } else if (isStartup) {
@@ -96,5 +109,6 @@ module.exports = {
   getShippingZones,
   getKeywords,
   getResponses,
-  getFaqs
+  getFaqs,
+  parseVNNumber
 };

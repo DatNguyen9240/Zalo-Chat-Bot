@@ -30,7 +30,15 @@ async function createPaymentLink(order) {
 
   try {
     const orderCode = Number(order.orderId) || Date.now();
-    const baseUrl = WEBHOOK_URL ? WEBHOOK_URL.replace("/webhook", "") : "https://localhost:3000";
+    let baseUrl = "http://localhost:3000";
+    if (WEBHOOK_URL) {
+      try {
+        const urlObj = new URL(WEBHOOK_URL);
+        baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+      } catch (e) {
+        baseUrl = WEBHOOK_URL.split("/webhook")[0];
+      }
+    }
 
     const paymentData = {
       orderCode,

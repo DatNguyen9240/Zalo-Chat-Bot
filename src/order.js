@@ -1,8 +1,93 @@
 const axios = require("axios");
 const { GOOGLE_SHEET_URL } = require("./config");
 const { getProducts, calculateShipping, getSettings, getOrderReplies } = require("./constants");
-const { saveOrder, updateOrderStatus, trackEvent } = require("./database");
+const { saveOrder, updateOrderStatus, updateOrderPaymentMethod, trackEvent, getOrdersByChatId, cancelOrder: dbCancelOrder } = require("./database");
 const log = require("./logger");
+
+// ============================================================
+// Bank BIN mapping — cho VietQR
+// ============================================================
+const BANK_BIN_MAP = {
+  "mb": "970422", "mbbank": "970422",
+  "vcb": "970436", "vietcombank": "970436",
+  "tcb": "970407", "techcombank": "970407",
+  "acb": "970416",
+  "bidv": "970418",
+  "vpbank": "970432", "vpb": "970432",
+  "tpbank": "970423", "tpb": "970423",
+  "sacombank": "970403", "stb": "970403",
+  "vietinbank": "970415", "ctg": "970415",
+  "agribank": "970405",
+  "msb": "970426",
+  "shb": "970443",
+  "hdbank": "970437",
+  "ocb": "970448",
+  "vib": "970441",
+  "eximbank": "970431",
+  "lpb": "970449", "lienvietpostbank": "970449",
+  "seabank": "970440",
+  "namabank": "970428",
+  "abbank": "970425",
+  "bvbank": "970438",
+  "pvcombank": "970412",
+  "baovietbank": "970438",
+  "cake": "546034", "cakebank": "546034",
+};
+
+function getBankBin(bankName) {
+  if (!bankName) return null;
+  const lower = bankName.toLowerCase().replace(/\s+/g, "").replace(/bank$/i, "");
+  // Thử match trực tiếp
+  if (BANK_BIN_MAP[lower]) return BANK_BIN_MAP[lower];
+  // Thử match có "bank" suffix
+  if (BANK_BIN_MAP[lower + "bank"]) return BANK_BIN_MAP[lower + "bank"];
+  // Thử từng key
+  for (const [key, bin] of Object.entries(BANK_BIN_MAP)) {
+    if (lower.includes(key) || key.includes(lower)) return bin;
+  }
+  return null;
+}
+
+/**
+ * Tạo link VietQR từ thông tin bank settings
+ */
+function createVietQRLink(amount, orderId) {
+  const settings = getSettings();
+  const bankName = settings.BANK_NAME;
+  const bankAccount = settings.BANK_ACCOUNT;
+  const bankOwner = settings.BANK_OWNER;
+
+  if (!bankName || !bankAccount || !bankOwner) return null;
+
+  const bin = settings.BANK_BIN || getBankBin(bankName);
+  if (!bin) {
+    log.warn(`⚠️ Không tìm được BIN cho ngân hàng: ${bankName}. Sẽ hiện STK thay vì QR.`);
+    return null;
+  }
+
+  const description = `DH${orderId} Tra Lai Shop`;
+  const encodedDesc = encodeURIComponent(description);
+  const encodedName = encodeURIComponent(bankOwner);
+
+  return `https://img.vietqr.io/image/${bin}-${bankAccount}-compact.png?amount=${amount}&addInfo=${encodedDesc}&accountName=${encodedName}`;
+}
+
+/**
+ * Kiểm tra thanh toán online có được bật không
+ */
+function isOnlinePaymentEnabled() {
+  const settings = getSettings();
+  const val = (settings.PAYMENT_ONLINE || "").toString().toLowerCase();
+  return val === "true" || val === "1" || val === "yes" || val === "on" || val === "bật" || val === "có";
+}
+
+/**
+ * Kiểm tra có thông tin bank hay không
+ */
+function hasBankInfo() {
+  const settings = getSettings();
+  return !!(settings.BANK_NAME && settings.BANK_ACCOUNT && settings.BANK_OWNER);
+}
 
 // ============================================================
 // Pending Orders — chờ xác nhận trước khi lưu
@@ -14,8 +99,8 @@ const PENDING_TIMEOUT = 5 * 60 * 1000; // 5 phút
 async function createPendingOrder(chatId, displayName, parsed) {
   cancelPendingTimeout(chatId);
 
-  const unitPrice = Math.round(parsed.product.price || 0);
-  const qty = Math.round(parsed.quantity || 1);
+  const unitPrice = Math.round(Number(parsed.product.price) || 0);
+  const qty = Math.round(Number(parsed.quantity) || 1);
   const totalProductPrice = unitPrice * qty;
   const shipping = calculateShipping(parsed.address, totalProductPrice);
   const totalPrice = totalProductPrice + Math.round(shipping.fee || 0);
@@ -139,10 +224,11 @@ function tryParseOrder(text) {
   }
   if (!product) return null;
 
-  // 2) Detect SĐT (+84, 84 hoặc 0...)
-  const phoneMatch = text.match(/((?:\+84|84|0)\d{9,10})/);
+  // 2) Detect SĐT (+84, 84 hoặc 0...) - Chấp nhận cả dấu cách/chấm phân cách
+  const phoneMatch = text.match(/((?:\+84|84|0)\s?(\d{2,3}[\.\s]?){2,3}\d{3,4})/);
   if (!phoneMatch) return null;
-  const phone = phoneMatch[1];
+  const phone = phoneMatch[1].replace(/[\s\.]/g, ""); // Làm sạch SĐT
+  if (phone.length < 9) return null;
 
   let qtyMatch = lower.match(/(\d+)\s*(gói|hộp|bịch|cái|lon|hũ)/);
   let quantity = 1;
@@ -232,6 +318,7 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
     customerName: parsed.customerName,
     phone: parsed.phone,
     address: parsed.address,
+    paymentMethod: "pending", // Sẽ update sau khi khách chọn
   });
 
   // 3) Ghi đơn vào Sheet (Đồng bộ)
@@ -247,12 +334,13 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
     address: parsed.address,
     shippingZone: shipping.zone,
     shippingFee: shipping.fee,
+    paymentMethod: isOnlinePaymentEnabled() ? "Chờ chọn" : "COD",
   });
 
   if (!confirmResult || !confirmResult.ok) {
     log.error(`⚠️ Đồng bộ đơn hàng #${orderId} thất bại!`);
     updateOrderStatus(orderId, "error_sheet");
-    return `⚠️ CẢNH BÁO: Đã có lỗi kỹ thuật khi đồng bộ đơn hàng #${orderId} lên Google Sheet.\n\nTuy nhiên, Bot đã ghi nhận thông tin thành công. Chủ shop sẽ kiểm tra và xác nhận sớm nhất qua SĐT ${parsed.phone} của bạn nhé! 🙏`;
+    return `⚠️ CẢNH BÁO: Đã có lỗi kỹ thuật khi đồng bộ đơn hàng #${orderId} lên Google Sheet.\n\nTuy nhiên, Bot đã ghi nhận thông tin thành công. Chủ shop sẽ kiểm tra và xác nhận sớm qua SĐT ${parsed.phone} của bạn nhé! 🙏`;
   }
 
   trackEvent("order_created", chatId);
@@ -261,39 +349,7 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
   const productTotalStr = totalProductPrice.toLocaleString("vi-VN") + "đ";
   let shipLine = shipping.fee === 0 ? `Phí ship: MIỄN PHÍ (${shipping.zone})` : `Phí ship: ${shipping.fee.toLocaleString("vi-VN")}đ (${shipping.zone})`;
 
-  // 4) Hỏi phương thức thanh toán (nếu PayOS đã cấu hình)
-  if (isPayOSEnabled()) {
-    pendingPaymentChoice.set(chatId, {
-      orderId,
-      totalPrice,
-      product: parsed.product.name,
-      buyerName: parsed.customerName,
-      buyerPhone: parsed.phone,
-      displayName,
-    });
-
-    return (
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `  ✅  ĐƠN HÀNG #${orderId}\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `Sản phẩm: ${parsed.product.name}\n` +
-      `Số lượng: ${parsed.quantity} gói\n` +
-      `Tiền hàng: ${productTotalStr}\n` +
-      `${shipLine}\n` +
-      `Tổng thanh toán: ${priceStr}\n\n` +
-      `Người nhận: ${parsed.customerName}\n` +
-      `SĐT: ${parsed.phone}\n` +
-      `Địa chỉ: ${parsed.address}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `  💳  CHỌN PHƯƠNG THỨC THANH TOÁN\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `1️⃣ Nhắn "chuyển khoản" → Thanh toán QR/Chuyển khoản\n` +
-      `2️⃣ Nhắn "tiền mặt" → Thanh toán khi nhận hàng (COD)`
-    );
-  }
-
-  // Không có PayOS → COD mặc định
-  return (
+  const orderInfo =
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `  ✅  ĐƠN HÀNG #${orderId}\n` +
     `━━━━━━━━━━━━━━━━━━━━\n\n` +
@@ -304,7 +360,36 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
     `Tổng thanh toán: ${priceStr}\n\n` +
     `Người nhận: ${parsed.customerName}\n` +
     `SĐT: ${parsed.phone}\n` +
-    `Địa chỉ: ${parsed.address}\n\n` +
+    `Địa chỉ: ${parsed.address}\n`;
+
+  // 4) Kiểm tra thanh toán online
+  if (isOnlinePaymentEnabled()) {
+    // Lưu pending payment choice với timeout
+    setPendingPaymentChoice(chatId, {
+      orderId,
+      totalPrice,
+      product: parsed.product.name,
+      buyerName: parsed.customerName,
+      buyerPhone: parsed.phone,
+      displayName,
+    });
+
+    return (
+      orderInfo + `\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `  💳  CHỌN THANH TOÁN\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `1️⃣ Nhắn "chuyển khoản" → Thanh toán trước\n` +
+      `2️⃣ Nhắn "tiền mặt" → COD (trả khi nhận hàng)`
+    );
+  }
+
+  // Không bật thanh toán online → COD mặc định
+  updateOrderPaymentMethod(orderId, "cod");
+  updateOrderStatus(orderId, "cod");
+  sendToGoogleSheet({ action: "update_payment_status", orderId, status: "COD", paymentMethod: "COD" }).catch(() => {});
+  return (
+    orderInfo + `\n` +
     `💰 Thanh toán: Tiền mặt khi nhận hàng (COD)\n` +
     `Cảm ơn ${displayName}! Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏`
   );
@@ -313,7 +398,28 @@ async function createOrderFromParsed(chatId, displayName, parsed) {
 // ============================================================
 // Pending Payment Choice — chờ khách chọn phương thức thanh toán
 // ============================================================
-const pendingPaymentChoice = new Map(); // chatId -> { orderId, totalPrice, ... }
+const pendingPaymentChoice = new Map(); // chatId -> { orderId, totalPrice, ..., timer }
+
+const PAYMENT_CHOICE_TIMEOUT = 10 * 60 * 1000; // 10 phút
+
+function setPendingPaymentChoice(chatId, data) {
+  // Cleanup cũ nếu có
+  const old = pendingPaymentChoice.get(chatId);
+  if (old && old.timer) clearTimeout(old.timer);
+
+  // Tự động fallback COD nếu hết hạn
+  const timer = setTimeout(() => {
+    const pending = pendingPaymentChoice.get(chatId);
+    if (pending) {
+      updateOrderPaymentMethod(pending.orderId, "cod");
+      updateOrderStatus(pending.orderId, "cod");
+      pendingPaymentChoice.delete(chatId);
+      log.info(`⏰ Payment choice expired for ${chatId}, defaulting to COD for order #${pending.orderId}`);
+    }
+  }, PAYMENT_CHOICE_TIMEOUT);
+
+  pendingPaymentChoice.set(chatId, { ...data, timer, createdAt: Date.now() });
+}
 
 function hasPendingPaymentChoice(chatId) {
   return pendingPaymentChoice.has(chatId);
@@ -326,49 +432,258 @@ async function handlePaymentChoice(chatId, text) {
   const lower = text.toLowerCase().trim();
 
   // Khách chọn Chuyển khoản
-  if (lower.includes("chuyển khoản") || lower.includes("chuyen khoan") || lower.includes("qr") || lower.includes("online") || lower.includes("1")) {
+  if (lower.includes("chuyển khoản") || lower.includes("chuyen khoan") || lower.includes("chuyển tiền") || lower.includes("qr") || lower.includes("online") || lower === "1" || lower === "ck" || lower === "chuyển" || lower.includes("banking")) {
+    // Cleanup timer
+    if (pending.timer) clearTimeout(pending.timer);
     pendingPaymentChoice.delete(chatId);
 
-    const payResult = await createPaymentLink({
-      orderId: pending.orderId,
-      amount: pending.totalPrice,
-      description: `DH${pending.orderId} ${pending.product}`,
-      buyerName: pending.buyerName,
-      buyerPhone: pending.buyerPhone,
-    });
+    // Ưu tiên PayOS
+    if (isPayOSEnabled()) {
+      const payResult = await createPaymentLink({
+        orderId: pending.orderId,
+        amount: pending.totalPrice,
+        description: `DH${pending.orderId} ${pending.product}`,
+        buyerName: pending.buyerName,
+        buyerPhone: pending.buyerPhone,
+      });
 
-    if (payResult && payResult.checkoutUrl) {
-      updateOrderStatus(pending.orderId, "pending_payment");
-      return (
-        `━━━━━━━━━━━━━━━━━━━━\n` +
-        `  💳  THANH TOÁN ĐƠN #${pending.orderId}\n` +
-        `━━━━━━━━━━━━━━━━━━━━\n\n` +
-        `Số tiền: ${pending.totalPrice.toLocaleString("vi-VN")}đ\n\n` +
-        `👉 Nhấn link để thanh toán:\n${payResult.checkoutUrl}\n\n` +
-        `⏰ Link có hiệu lực trong 15 phút.\n` +
-        `Sau khi thanh toán, Shop sẽ xác nhận tự động! ✅`
-      );
-    } else {
-      updateOrderStatus(pending.orderId, "cod");
-      return `⚠️ Không thể tạo link thanh toán lúc này. Đơn hàng #${pending.orderId} sẽ được xử lý COD (tiền mặt khi nhận hàng). Chủ shop sẽ liên hệ bạn sớm! 🙏`;
+      if (payResult && payResult.checkoutUrl) {
+        updateOrderPaymentMethod(pending.orderId, "payos");
+        updateOrderStatus(pending.orderId, "pending_payment");
+        sendToGoogleSheet({ action: "update_payment_status", orderId: pending.orderId, status: "pending_payment", paymentMethod: "PayOS" }).catch(() => {});
+        return (
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `  💳  THANH TOÁN ĐƠN #${pending.orderId}\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n\n` +
+          `Số tiền: ${pending.totalPrice.toLocaleString("vi-VN")}đ\n\n` +
+          `👉 Nhấn link để thanh toán:\n${payResult.checkoutUrl}\n\n` +
+          `⏰ Link có hiệu lực trong 15 phút.\n` +
+          `Sau khi thanh toán, Shop sẽ xác nhận tự động! ✅`
+        );
+      }
+      // PayOS lỗi → thử VietQR fallback
+      log.warn(`⚠️ PayOS lỗi cho đơn #${pending.orderId}, thử VietQR fallback...`);
     }
+
+    // Fallback: VietQR (nếu có bank info)
+    if (hasBankInfo()) {
+      const settings = getSettings();
+      const qrLink = createVietQRLink(pending.totalPrice, pending.orderId);
+
+      updateOrderPaymentMethod(pending.orderId, "bank_transfer");
+      updateOrderStatus(pending.orderId, "pending_payment");
+      sendToGoogleSheet({ action: "update_payment_status", orderId: pending.orderId, status: "pending_payment", paymentMethod: "Chuyển khoản" }).catch(() => {});
+
+      let msg =
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `  💳  CHUYỂN KHOẢN ĐƠN #${pending.orderId}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `Ngân hàng: ${settings.BANK_NAME}\n` +
+        `Số TK: ${settings.BANK_ACCOUNT}\n` +
+        `Chủ TK: ${settings.BANK_OWNER}\n` +
+        `Số tiền: ${pending.totalPrice.toLocaleString("vi-VN")}đ\n` +
+        `Nội dung CK: DH${pending.orderId}\n`;
+
+      if (qrLink) {
+        msg += `\n📱 Quét mã QR để chuyển khoản:\n${qrLink}\n`;
+      }
+
+      msg += `\n⏰ Sau khi chuyển khoản, bạn nhắn "đã chuyển khoản" để shop xác nhận nhé! 🙏`;
+
+      return msg;
+    }
+
+    // Không có PayOS, không có bank info → hướng dẫn liên hệ
+    const settings = getSettings();
+    updateOrderPaymentMethod(pending.orderId, "cod");
+    updateOrderStatus(pending.orderId, "cod");
+    sendToGoogleSheet({ action: "update_payment_status", orderId: pending.orderId, status: "COD", paymentMethod: "COD" }).catch(() => {});
+    return (
+      `⚠️ Chức năng chuyển khoản đang được cập nhật.\n\n` +
+      `Đơn hàng #${pending.orderId} sẽ thanh toán COD (trả khi nhận hàng).\n` +
+      `Hoặc liên hệ chủ shop qua Zalo ${settings.OWNER_PHONE || "0975324568"} để chuyển khoản trực tiếp ạ! 🙏`
+    );
   }
 
   // Khách chọn COD
-  if (lower.includes("tiền mặt") || lower.includes("tien mat") || lower.includes("cod") || lower.includes("2")) {
+  if (lower.includes("tiền mặt") || lower.includes("tien mat") || lower.includes("cod") || lower === "2" || lower.includes("nhận hàng")) {
+    if (pending.timer) clearTimeout(pending.timer);
     pendingPaymentChoice.delete(chatId);
+    updateOrderPaymentMethod(pending.orderId, "cod");
     updateOrderStatus(pending.orderId, "cod");
+    sendToGoogleSheet({ action: "update_payment_status", orderId: pending.orderId, status: "cod", paymentMethod: "COD" }).catch(() => {});
     return `✅ Đơn hàng #${pending.orderId} sẽ thanh toán khi nhận hàng (COD).\nCảm ơn ${pending.displayName}! Chủ shop sẽ liên hệ xác nhận sớm nhất! 🙏🍵`;
   }
 
   // Không hiểu lựa chọn
-  return `Bạn vui lòng chọn phương thức thanh toán:\n1️⃣ Nhắn "chuyển khoản" → QR/Chuyển khoản\n2️⃣ Nhắn "tiền mặt" → COD (trả khi nhận hàng)`;
+  return `Bạn vui lòng chọn phương thức thanh toán:\n1️⃣ Nhắn "chuyển khoản" → Thanh toán trước\n2️⃣ Nhắn "tiền mặt" → COD (trả khi nhận hàng)`;
 }
 
-async function sendToGoogleSheet(order) {
+// ============================================================
+// Xem đơn hàng (customer-facing)
+// ============================================================
+const STATUS_LABELS = {
+  "new": "🆕 Mới tạo",
+  "pending": "⏳ Chờ xử lý",
+  "pending_payment": "💳 Chờ thanh toán",
+  "cod": "📦 COD - Chờ giao",
+  "paid": "✅ Đã thanh toán",
+  "confirmed": "✅ Đã xác nhận",
+  "shipping": "🚚 Đang giao hàng",
+  "delivered": "✅ Đã giao",
+  "cancelled": "❌ Đã hủy",
+  "error_sheet": "⚠️ Lỗi hệ thống",
+};
+
+const SHEET_STATUS_LABELS = {
+  "new": "Mới",
+  "pending": "Chờ xử lý",
+  "pending_payment": "Chờ thanh toán",
+  "cod": "Chờ giao (COD)",
+  "paid": "Đã thanh toán",
+  "confirmed": "Đã xác nhận",
+  "shipping": "Đang giao",
+  "delivered": "Đã giao",
+  "cancelled": "Đã hủy",
+  "error_sheet": "Lỗi đồng bộ",
+};
+
+const PAYMENT_LABELS = {
+  "cod": "💰 Tiền mặt (COD)",
+  "bank_transfer": "🏦 Chuyển khoản",
+  "payos": "💳 Online (PayOS)",
+  "pending": "⏳ Chưa chọn",
+};
+
+function formatOrderHistory(chatId) {
+  const orders = getOrdersByChatId(chatId, 5);
+
+  if (!orders || orders.length === 0) {
+    return "📋 Bạn chưa có đơn hàng nào.\n\nNhắn \"đặt hàng\" để mua trà nhé! 🍵";
+  }
+
+  let msg = `━━━━━━━━━━━━━━━━━━━━\n  📋  ĐƠN HÀNG CỦA BẠN\n━━━━━━━━━━━━━━━━━━━━\n`;
+
+  for (const o of orders) {
+    const statusLabel = STATUS_LABELS[o.status] || o.status;
+    const paymentLabel = PAYMENT_LABELS[o.payment_method] || o.payment_method || "COD";
+    const date = o.created_at ? new Date(o.created_at + "Z").toLocaleDateString("vi-VN") : "";
+
+    msg += `\n📦 Đơn #${o.id} (${date})\n`;
+    msg += `  ${o.product} x${o.quantity} — ${o.total_price.toLocaleString("vi-VN")}đ\n`;
+    msg += `  Trạng thái: ${statusLabel}\n`;
+    msg += `  Thanh toán: ${paymentLabel}\n`;
+  }
+
+  msg += `\n━━━━━━━━━━━━━━━━━━━━`;
+  msg += `\n💡 Nhắn "hủy đơn X" để hủy đơn (nếu chưa giao).`;
+
+  return msg;
+}
+
+// ============================================================
+// Hủy đơn hàng sau confirm (customer-facing)
+// ============================================================
+function cancelConfirmedOrder(chatId, text) {
+  // Tìm order ID từ text: "hủy đơn 5", "hủy đơn hàng #3", "cancel order 2"
+  const match = text.match(/(?:hủy\s*đơn|cancel\s*order|huy\s*don)\s*(?:hàng\s*)?#?(\d+)/i);
+
+  if (!match) {
+    // Nếu không có ID cụ thể, hủy đơn gần nhất
+    const orders = getOrdersByChatId(chatId, 1);
+    if (!orders || orders.length === 0) {
+      return "Bạn chưa có đơn hàng nào để hủy ạ.";
+    }
+    const latestOrder = orders[0];
+    if (["cancelled", "delivered", "shipping"].includes(latestOrder.status)) {
+      return `Đơn hàng #${latestOrder.id} đang ở trạng thái "${STATUS_LABELS[latestOrder.status] || latestOrder.status}" nên không thể hủy ạ.`;
+    }
+
+    const result = dbCancelOrder(latestOrder.id);
+    if (result.ok) {
+      // Đồng bộ hủy lên Sheet
+      sendToGoogleSheet({
+        action: "update_status",
+        orderId: latestOrder.id,
+        status: "cancelled",
+      }).catch(() => {});
+
+      return `✅ Đã hủy đơn hàng #${latestOrder.id} (${latestOrder.product} x${latestOrder.quantity}).\n\nNếu bạn muốn đặt lại, cứ nhắn mình nhé! 🙏`;
+    }
+    return `Không thể hủy đơn #${latestOrder.id}. ${result.error === "cannot_cancel" ? `Đơn đang "${STATUS_LABELS[result.status] || result.status}".` : ""}`;
+  }
+
+  const orderId = parseInt(match[1]);
+  // Kiểm tra đơn thuộc về khách này
+  const orders = getOrdersByChatId(chatId, 50);
+  const order = orders.find(o => o.id === orderId);
+
+  if (!order) {
+    return `Không tìm thấy đơn hàng #${orderId} của bạn ạ.`;
+  }
+
+  const result = dbCancelOrder(orderId);
+  if (result.ok) {
+    sendToGoogleSheet({
+      action: "update_status",
+      orderId,
+      status: "cancelled",
+    }).catch(() => {});
+
+    return `✅ Đã hủy đơn hàng #${orderId} (${order.product} x${order.quantity}).\n\nNếu bạn muốn đặt lại, cứ nhắn mình nhé! 🙏`;
+  }
+
+  if (result.error === "cannot_cancel") {
+    return `Không thể hủy đơn #${orderId}. Đơn đang ở trạng thái "${STATUS_LABELS[result.status] || result.status}" ạ.`;
+  }
+  return `Không tìm thấy đơn hàng #${orderId} ạ.`;
+}
+
+// ============================================================
+// Xác nhận đã chuyển khoản (customer-facing)
+// ============================================================
+function confirmBankTransfer(chatId) {
+  const orders = getOrdersByChatId(chatId, 5);
+  const pendingPayment = orders.find(o => o.status === "pending_payment" && (o.payment_method === "bank_transfer" || o.payment_method === "payos"));
+
+  if (!pendingPayment) {
+    return null; // Không có đơn chờ thanh toán
+  }
+
+  const settings = getSettings();
+  return (
+    `📝 Đã ghi nhận! Đơn hàng #${pendingPayment.id} đang chờ shop xác nhận thanh toán.\n\n` +
+    `Chủ shop sẽ kiểm tra và xác nhận sớm nhất ạ!\n` +
+    `Nếu cần hỗ trợ, liên hệ Zalo: ${settings.OWNER_PHONE || "0975324568"} 🙏`
+  );
+}
+
+// ============================================================
+// Thông báo cập nhật đơn hàng (gửi cho khách)
+// ============================================================
+function getOrderStatusNotification(order, newStatus) {
+  const statusMessages = {
+    "confirmed": `✅ Đơn hàng #${order.id} đã được xác nhận!\n\nShop đang chuẩn bị hàng cho bạn. 📦`,
+    "shipping": `🚚 Đơn hàng #${order.id} đang được giao!\n\n${order.product} x${order.quantity}\nShop sẽ thông báo khi giao thành công nhé!`,
+    "delivered": `✅ Đơn hàng #${order.id} đã giao thành công!\n\nCảm ơn bạn đã tin tưởng Trà Lài Shop! 🍵💚\nNếu có vấn đề gì, nhắn mình nhé!`,
+    "paid": `✅ THANH TOÁN THÀNH CÔNG!\n\nĐơn hàng #${order.id} đã được thanh toán.\nShop sẽ chuẩn bị hàng và giao cho bạn sớm nhất! 🚚`,
+    "cancelled": `❌ Đơn hàng #${order.id} đã bị hủy.\n\nNếu bạn muốn đặt lại, cứ nhắn mình nhé! 🙏`,
+  };
+
+  return statusMessages[newStatus] || `📋 Đơn hàng #${order.id} đã được cập nhật: ${STATUS_LABELS[newStatus] || newStatus}`;
+}
+
+async function sendToGoogleSheet(orderData) {
   if (!GOOGLE_SHEET_URL) return null;
   try {
-    const res = await axios.post(GOOGLE_SHEET_URL, order, { timeout: 10000 });
+    const payload = { ...orderData };
+    
+    // Tự động chuyển đổi status sang label tiếng Việt cho Sheet
+    if (payload.status && SHEET_STATUS_LABELS[payload.status]) {
+      payload.status = SHEET_STATUS_LABELS[payload.status];
+    }
+    
+    const res = await axios.post(GOOGLE_SHEET_URL, payload, { timeout: 10000 });
     return res.data;
   } catch (err) {
     log.error("Google Sheet error:", err.message);
@@ -386,4 +701,12 @@ module.exports = {
   sendToGoogleSheet,
   hasPendingPaymentChoice,
   handlePaymentChoice,
+  formatOrderHistory,
+  cancelConfirmedOrder,
+  confirmBankTransfer,
+  getOrderStatusNotification,
+  isOnlinePaymentEnabled,
+  STATUS_LABELS,
+  SHEET_STATUS_LABELS,
+  PAYMENT_LABELS,
 };

@@ -8,8 +8,7 @@ const { getSessionCount, cleanup } = require("./src/gemini");
 const { registerWebhook, deleteWebhook, getWebhookInfo, getMe, sendMessage } = require("./src/zaloBot");
 const { setupWebhook } = require("./src/webhookHandler");
 const { startPolling, stopPolling } = require("./src/polling");
-const { getStats, getOrders, updateOrderStatus, closeDb } = require("./src/database");
-const { getQueueInfo } = require("./src/queue");
+const { createPaymentLink, verifyWebhookData, isPayOSEnabled } = require("./src/payos");
 const { fetchConfig } = require("./src/configManager");
 const log = require("./src/logger");
 
@@ -150,12 +149,37 @@ app.get("/admin/orders", requireAdmin, (req, res) => {
   res.json({ orders: getOrders(status) });
 });
 
-// PATCH /admin/orders/:id — Cập nhật trạng thái đơn
-app.patch("/admin/orders/:id", requireAdmin, (req, res) => {
+// PATCH /admin/orders/:id — Cập nhật trạng thái đơn + thông báo khách
+app.patch("/admin/orders/:id", requireAdmin, async (req, res) => {
   const { status } = req.body;
   if (!status) return res.status(400).json({ error: "status là bắt buộc" });
-  updateOrderStatus(req.params.id, status);
-  res.json({ ok: true, message: `Đơn #${req.params.id} → ${status}` });
+  
+  const orderId = parseInt(req.params.id);
+  if (isNaN(orderId)) return res.status(400).json({ error: "ID đơn hàng không hợp lệ" });
+  
+  // Lấy thông tin đơn trước khi update
+  const order = getOrderById(orderId);
+  if (!order) return res.status(404).json({ error: "Không tìm thấy đơn hàng" });
+  
+  updateOrderStatus(orderId, status);
+  
+  // Gửi thông báo cho khách
+  if (order && order.chat_id) {
+    try {
+      const { getOrderStatusNotification } = require("./src/order");
+      const notification = getOrderStatusNotification(order, status);
+      await sendMessage(order.chat_id, notification);
+      log.info(`📢 Notified customer ${order.chat_id} about order #${orderId} → ${status}`);
+    } catch (err) {
+      log.error(`⚠️ Failed to notify customer: ${err.message}`);
+    }
+  }
+  
+  // Đồng bộ lên Google Sheet
+  const { sendToGoogleSheet } = require("./src/order");
+  sendToGoogleSheet({ action: "update_status", orderId, status }).catch(() => {});
+  
+  res.json({ ok: true, message: `Đơn #${orderId} → ${status}` });
 });
 
 // ============================================================
@@ -166,16 +190,35 @@ const { sendToGoogleSheet } = require("./src/order");
 
 app.post("/payos/webhook", async (req, res) => {
   try {
-    if (!isPayOSEnabled()) return res.json({ ok: true });
-
+    if (!req.body || !isPayOSEnabled()) return res.json({ ok: true });
+    
+    // 1. Xác thực chữ ký webhook đầu tiên
     const webhookData = verifyWebhookData(req.body);
     if (!webhookData) {
       log.warn("⚠️ PayOS webhook: Invalid signature");
       return res.status(400).json({ error: "Invalid signature" });
     }
 
-    const { orderCode, code, desc } = webhookData;
+    // 2. Trả lời 200 ngay lập tức sau khi xác thực hợp lệ
+    // Trả về 200 sớm giúp ngắt retry từ PayOS nhưng vẫn tiếp tục xử lý logic bên dưới
+    res.json({ ok: true }); 
+
+    // 3. Xử lý logic phía sau asynchronously
+    const { code, desc } = req.body;
+    const { orderCode } = webhookData;
     log.info(`💳 PayOS webhook: Order #${orderCode} — ${code} (${desc})`);
+
+    const order = getOrderById(orderCode);
+    if (!order) {
+      log.warn(`⚠️ PayOS webhook: Không tìm thấy đơn hàng #${orderCode}`);
+      return; 
+    }
+
+    // 2) Chống nổ trùng đơn (Idempotency)
+    if (order.status === "paid" || order.status === "delivered") {
+      log.info(`ℹ️ PayOS webhook: Đơn #${orderCode} đã xử lý rồi. Bỏ qua.`);
+      return res.json({ ok: true });
+    }
 
     if (code === "00") {
       // Thanh toán thành công
@@ -186,13 +229,13 @@ app.post("/payos/webhook", async (req, res) => {
         action: "update_payment_status",
         orderId: orderCode,
         status: "Đã thanh toán",
+        paymentMethod: "PayOS",
       });
 
       // Tìm chatId từ đơn hàng để gửi tin nhắn xác nhận
-      const orders = getOrders();
-      const order = orders.find(o => o.id === orderCode || o.id === String(orderCode));
-      if (order && order.chat_id) {
-        await sendMessage(order.chat_id,
+      const paidOrder = getOrderById(orderCode);
+      if (paidOrder && paidOrder.chat_id) {
+        await sendMessage(paidOrder.chat_id,
           `✅ THANH TOÁN THÀNH CÔNG!\n\n` +
           `Đơn hàng #${orderCode} đã được thanh toán.\n` +
           `Shop sẽ chuẩn bị hàng và giao cho bạn sớm nhất! 🚚\n\n` +
@@ -202,11 +245,8 @@ app.post("/payos/webhook", async (req, res) => {
 
       log.info(`✅ PayOS: Đơn #${orderCode} đã thanh toán thành công!`);
     }
-
-    res.json({ ok: true });
   } catch (err) {
     log.error("❌ PayOS webhook error:", err);
-    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
