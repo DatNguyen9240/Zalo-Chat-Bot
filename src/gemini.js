@@ -278,10 +278,10 @@ async function handleFunctionCall(functionCall, chatId, displayName) {
 
 async function generateReply(chatId, messageText, displayName = "Khách") {
   return enqueue(async () => {
+    let timeoutId;
     try {
       const chat = getOrCreateChat(chatId);
       const timeoutMs = 30000;
-      let timeoutId;
       const timeoutPromise = new Promise((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error("Gemini timeout")), timeoutMs);
       });
